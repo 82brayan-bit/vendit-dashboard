@@ -825,6 +825,7 @@ function renderAlerts(item){
 /* Per-lane pricing & unit overrides, saved locally so they persist across refreshes */
 const PRICE_KEY='vendit-prices';
 const UNITS_KEY='vendit-units';
+const CAP_KEY='vendit-capacity';
 const DEFAULT_PRICE=2.50;
 function loadStore(k){ try{ return JSON.parse(localStorage.getItem(k))||{}; }catch(e){ return {}; } }
 function saveStore(k,key,val){ const s=loadStore(k); s[key]=val; localStorage.setItem(k,JSON.stringify(s)); }
@@ -843,10 +844,12 @@ function salesRows(item){
     (map[key]=map[key]||{key,machine:d.machine,row:d.row,total:0,occ:0});
     map[key].total++; if(d.occupied) map[key].occ++;
   });
+  const caps=loadStore(CAP_KEY);
   return Object.values(map)
     .sort((a,b)=>a.machine.localeCompare(b.machine)||a.row.localeCompare(b.row,undefined,{numeric:true}))
     .map(r=>{
-      r.empty=r.total-r.occ;
+      r.cap=(r.key in caps) ? caps[r.key] : r.total; // max capacity, editable, defaults to slot count
+      r.empty=Math.max(0, r.cap-r.occ);
       r.units=(r.key in units) ? units[r.key] : r.empty; // editable, defaults to empty slots
       r.price=priceFor(prices,r.key);
       r.rev=r.units*r.price;
@@ -878,7 +881,7 @@ function renderSales(item){
   const rowsHtml=rows.map(r=>`<tr>
       <td class="mono">${r.machine}</td>
       <td class="mono">${r.row}</td>
-      <td class="num mono">${r.occ}/${r.total}</td>
+      <td class="num"><span class="price-in"><input type="number" min="0" step="1" value="${r.cap}" data-cap-key="${r.key}"></span></td>
       <td class="num"><span class="price-in"><input type="number" min="0" step="1" value="${r.units}" data-units-key="${r.key}"></span></td>
       <td class="num"><span class="price-in">$<input type="number" min="0" step="0.05" value="${r.price.toFixed(2)}" data-price-key="${r.key}"></span></td>
       <td class="num mono" data-rev="${r.key}">${fmtUSD(r.rev)}</td>
@@ -891,7 +894,7 @@ function renderSales(item){
       ${kpi('Occupied Slots',inv.occupied_count+' / '+inv.total_slots,'solid-blue','📦')}
       ${kpi('Fill Rate',fill+'%','solid-orange','📊')}
     </div>
-    ${tableCard('Pricing & Estimated Sales by Lane','<th>Machine</th><th>Lane</th><th class="num">Occupied</th><th class="num">Units (est.)</th><th class="num">Price</th><th class="num">Revenue (est.)</th>',rowsHtml)}`;
+    ${tableCard('Pricing & Estimated Sales by Lane','<th>Machine</th><th>Lane</th><th class="num">Max Capacity</th><th class="num">Units (est.)</th><th class="num">Price</th><th class="num">Revenue (est.)</th>',rowsHtml)}`;
   box.querySelectorAll('input[data-price-key]').forEach(inp=>{
     inp.addEventListener('input',()=>{
       savePrice(inp.dataset.priceKey, parseFloat(inp.value)||0);
@@ -904,6 +907,12 @@ function renderSales(item){
       recalcSales(item);
     });
   });
+  box.querySelectorAll('input[data-cap-key]').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      saveStore(CAP_KEY, inp.dataset.capKey, Math.max(0,Math.round(parseFloat(inp.value)||0)));
+      recalcSales(item);
+    });
+  });
 }
 
 function recalcSales(item){
@@ -911,6 +920,8 @@ function recalcSales(item){
   let revenue=0,vended=0;
   rows.forEach(r=>{
     revenue+=r.rev; vended+=r.units;
+    const uInput=document.querySelector(`input[data-units-key="${r.key}"]`);
+    if(uInput && uInput!==document.activeElement) uInput.value=r.units; // reflect capacity-driven default
     const cell=document.querySelector(`[data-rev="${r.key}"]`);
     if(cell) cell.textContent=fmtUSD(r.rev);
   });
