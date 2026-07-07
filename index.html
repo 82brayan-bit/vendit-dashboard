@@ -280,7 +280,7 @@
     </div>
     <div class="card kpi">
       <div class="icon solid-purple">🛒</div>
-      <div><div class="k-label">Units Sold (est.)</div><div class="k-val" id="kpiUnits">0</div><div class="k-delta up" id="kpiUnitsDelta">live estimate</div></div>
+      <div><div class="k-label">Units Sold (2d)</div><div class="k-val" id="kpiUnits">0</div><div class="k-delta up" id="kpiUnitsDelta">observed depletion</div></div>
     </div>
     <div class="card kpi">
       <div class="icon solid-orange">🛍</div>
@@ -295,7 +295,7 @@
   <!-- CHARTS ROW -->
   <div class="row three">
     <div class="card">
-      <h3>Est. Revenue by Lane (Top 8)</h3>
+      <h3>Units Sold Over Time (2d, observed)</h3>
       <div class="chart-wrap"><canvas id="salesLine"></canvas></div>
     </div>
     <div class="card">
@@ -369,9 +369,9 @@
     <div class="card">
       <h3>Estimated Sales</h3>
       <div class="rev-grid">
-        <div class="rev"><div class="r-lab">Est. Revenue</div><div class="r-val" id="esRev">$0</div><div class="r-delta up">live</div></div>
-        <div class="rev"><div class="r-lab">Units Sold (est.)</div><div class="r-val" id="esUnits">0</div><div class="r-delta up">live</div></div>
-        <div class="rev"><div class="r-lab">Avg Price / Unit</div><div class="r-val" id="esAvg">$0.00</div><div class="r-delta up">live</div></div>
+        <div class="rev"><div class="r-lab">Est. Revenue (2d)</div><div class="r-val" id="esRev">$0</div><div class="r-delta up">observed</div></div>
+        <div class="rev"><div class="r-lab">Units Sold (2d)</div><div class="r-val" id="esUnits">0</div><div class="r-delta up">observed</div></div>
+        <div class="rev"><div class="r-lab">Avg Price / Unit</div><div class="r-val" id="esAvg">$0.00</div><div class="r-delta up">from lane prices</div></div>
         <div class="rev"><div class="r-lab">Items (Lanes)</div><div class="r-val" id="esLanes">0</div><div class="r-delta up">live</div></div>
       </div>
     </div>
@@ -385,14 +385,16 @@
 Chart.defaults.color = '#8b98ac';
 Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
 
-// Est. revenue by lane (top 8) — seeded empty, filled live in refreshDashboardLive()
+// Units sold over time (real, from inventory history) — seeded empty, filled live
 let salesLine=new Chart(document.getElementById('salesLine'), {
-  type:'bar',
+  type:'line',
   data:{labels:[],datasets:[
-    {label:'Est. Revenue',data:[],backgroundColor:'#2f7df0',borderRadius:4}
+    {label:'Units Sold',data:[],borderColor:'#2f7df0',
+      backgroundColor:(c)=>{const g=c.chart.ctx.createLinearGradient(0,0,0,210);g.addColorStop(0,'rgba(47,125,240,.35)');g.addColorStop(1,'rgba(47,125,240,0)');return g;},
+      fill:true,tension:.35,pointRadius:3,pointBackgroundColor:'#2f7df0',borderWidth:2.5}
   ]},
   options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-    scales:{y:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+v},beginAtZero:true},
+    scales:{y:{grid:{color:'#1e2a3f'},beginAtZero:true,ticks:{precision:0}},
             x:{grid:{display:false},ticks:{font:{size:11}}}}}
 });
 
@@ -561,6 +563,39 @@ async function fetchDevice(deviceId){
   return data.item;
 }
 
+/* Inventory-snapshot history (aggregate only, no per-lane detections).
+   API caps a range at ~100 snapshots (~2 days at 30-min cadence). */
+async function fetchHistory(deviceId,startUnix,endUnix){
+  const res=await fetch(`${VM_API}?device_id=${encodeURIComponent(deviceId)}&mode=range&start=${startUnix}&end=${endUnix}&_=${Date.now()}`);
+  const data=await res.json();
+  if(!data.ok||!Array.isArray(data.items)) throw new Error(data.message||'No history');
+  return data.items.slice().sort((a,b)=>a.timestamp-b.timestamp);
+}
+
+/* Real observed sales: every drop in occupied count between snapshots is a vend,
+   every rise is a restock. Includes CV jitter, so it's "observed depletion". */
+function computeVends(items){
+  let vends=0,restock=0;
+  for(let i=1;i<items.length;i++){
+    const d=(items[i-1].inventory.occupied_count||0)-(items[i].inventory.occupied_count||0);
+    if(d>0) vends+=d; else if(d<0) restock+=-d;
+  }
+  return {vends,restock};
+}
+
+/* Sum vends into per-day buckets for the trend chart (items must be sorted asc). */
+function vendsByDay(items){
+  const buckets=new Map();
+  for(let i=1;i<items.length;i++){
+    const d=(items[i-1].inventory.occupied_count||0)-(items[i].inventory.occupied_count||0);
+    if(d>0){
+      const key=new Date(items[i].timestamp*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+      buckets.set(key,(buckets.get(key)||0)+d);
+    }
+  }
+  return buckets;
+}
+
 async function loadInventory(deviceId){
   const box=document.getElementById('invLive');
   if(!box) return;
@@ -631,6 +666,30 @@ async function refreshDashboardLive(){
     set('esAvg',fmtUSD(avg));
     set('esLanes',lanes.length);
 
+    // ---- Real observed sales from inventory history (last 2 days) ----
+    try{
+      const now=Math.floor(Date.now()/1000);
+      const hist=await fetchHistory(LIVE_DEVICE, now-2*86400, now);
+      const {vends,restock}=computeVends(hist);
+      const avgPrice=lanes.length?lanes.reduce((s,r)=>s+r.price,0)/lanes.length:DEFAULT_PRICE;
+      const realRev=vends*avgPrice;
+      set('kpiUnits',vends.toLocaleString());
+      set('kpiSales',fmtUSD(realRev));
+      set('esUnits',vends.toLocaleString());
+      set('esRev',fmtUSD(realRev));
+      set('esAvg',fmtUSD(avgPrice));
+      const ud=document.getElementById('kpiUnitsDelta');
+      if(ud){ud.classList.remove('down','up');ud.textContent=`${vends} vended · 2d observed`;}
+      const sd=document.getElementById('kpiSalesDelta');
+      if(sd){sd.classList.remove('down','up');sd.textContent=`2d · ${fmtUSD(avgPrice)}/unit avg`;}
+      if(typeof salesLine!=='undefined'&&salesLine){
+        const buckets=vendsByDay(hist);
+        salesLine.data.labels=[...buckets.keys()];
+        salesLine.data.datasets[0].data=[...buckets.values()];
+        salesLine.update();
+      }
+    }catch(e){/* history unavailable — keep empty-slot estimates */}
+
     // Inventory Overview
     set('ovSlots',inv.total_slots);
     set('ovOcc',inv.occupied_count);
@@ -650,14 +709,6 @@ async function refreshDashboardLive(){
           {name:'Empty',val:inv.empty_count,color:'#f2a01d'}
         ].map(d=>`<div class="li"><span class="dot" style="background:${d.color}"></span><span class="name">${d.name}</span><span class="pct">${pct(d.val)}%</span><span class="amt">${d.val}</span></div>`).join('');
       }
-    }
-
-    // Est. revenue by lane (top 8) bar
-    if(typeof salesLine!=='undefined'&&salesLine){
-      const top8=lanes.slice().sort((a,b)=>b.rev-a.rev).slice(0,8);
-      salesLine.data.labels=top8.map(r=>`${r.machine} ${r.row}`);
-      salesLine.data.datasets[0].data=top8.map(r=>Math.round(r.rev));
-      salesLine.update();
     }
 
     // Est. revenue by column bar
