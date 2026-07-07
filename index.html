@@ -931,14 +931,16 @@ function recalcSales(item){
   if(u) u.textContent=vended;
 }
 
-let reportsDetail=false; // true while the Inventory & Restock detail is open
+let reportsDetail=''; // '', 'inventory', or 'sales' — which detail view is open
 
 async function loadReports(){
   const box=document.getElementById('reportsLive');
   if(!box) return;
   try{
     const item=await fetchDevice(LIVE_DEVICE);
-    reportsDetail ? renderInventoryReport(item) : renderReports(item);
+    if(reportsDetail==='inventory') renderInventoryReport(item);
+    else if(reportsDetail==='sales') renderSalesReport(item);
+    else renderReports(item);
   }
   catch(err){ box.innerHTML=`<div class="card"><h3>Live Reports</h3><p class="empty-note">Couldn't load live reports. ${err.message}</p></div>`; }
 }
@@ -972,8 +974,64 @@ function inventoryReportText(item){
   return L.join('\n');
 }
 
+function salesReportText(item){
+  const rows=salesRows(item).slice().sort((a,b)=>b.rev-a.rev);
+  const units=rows.reduce((s,r)=>s+r.units,0);
+  const revenue=rows.reduce((s,r)=>s+r.rev,0);
+  const L=['ESTIMATED SALES SUMMARY',
+    'Device '+LIVE_DEVICE+' · '+new Date(item.timestamp*1000).toLocaleString(),'',
+    'Estimated from live inventory (units default to empty slots). Not a transaction feed.','',
+    'SUMMARY',
+    `${units} units vended (est.) · ${fmtUSD(revenue)} estimated revenue`,
+    `${rows.length} lanes`,'',
+    'SALES BY LANE (highest revenue first)'];
+  rows.forEach(r=>L.push(`${(r.machine+' '+r.row).padEnd(9)}  ${String(r.units).padStart(3)} units × ${fmtUSD(r.price)}   ${fmtUSD(r.rev)}`));
+  return L.join('\n');
+}
+
+function renderSalesReport(item){
+  reportsDetail='sales';
+  const box=document.getElementById('reportsLive');
+  const rows=salesRows(item).slice().sort((a,b)=>b.rev-a.rev);
+  const units=rows.reduce((s,r)=>s+r.units,0);
+  const revenue=rows.reduce((s,r)=>s+r.rev,0);
+  const avg=units?revenue/units:0;
+  const upd=document.getElementById('reportsUpdated');
+  if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+  const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
+  const tblRows=rows.map(r=>`<tr>
+      <td class="mono">${r.machine} ${r.row}</td>
+      <td class="num mono">${r.units}</td>
+      <td class="num mono">${fmtUSD(r.price)}</td>
+      <td class="num mono">${fmtUSD(r.rev)}</td>
+    </tr>`).join('');
+  box.innerHTML=`
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div><div style="font-weight:800;font-size:16px">🛒 Estimated Sales Summary</div>
+        <div class="loc" style="margin-top:3px">${LIVE_DEVICE} · ${new Date(item.timestamp*1000).toLocaleString()}</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="repTxt">Download .txt</button>
+        <button class="btn ghost" id="repBack">← Back</button>
+      </div>
+    </div>
+    <div class="card"><p class="empty-note" style="margin:0">Estimated from live inventory (units default to empty slots; edit units and prices on the Sales view). This is not a transaction feed.</p></div>
+    <div class="grid-4">
+      ${kpi('Units Vended (est.)',units,'solid-green','🛒')}
+      ${kpi('Est. Revenue',fmtUSD(revenue),'solid-purple','💲')}
+      ${kpi('Avg. Price',fmtUSD(avg),'solid-blue','🏷')}
+      ${kpi('Lanes',rows.length,'solid-orange','📦')}
+    </div>
+    ${tableCard('Sales by Lane — highest revenue first','<th>Lane</th><th class="num">Units (est.)</th><th class="num">Price</th><th class="num">Revenue (est.)</th>',tblRows)}`;
+  document.getElementById('repBack').addEventListener('click',()=>renderReports(item));
+  document.getElementById('repTxt').addEventListener('click',()=>{
+    const blob=new Blob([salesReportText(item)],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`${LIVE_DEVICE}-estimated-sales-summary.txt`; a.click(); URL.revokeObjectURL(a.href);
+  });
+}
+
 function renderInventoryReport(item){
-  reportsDetail=true;
+  reportsDetail='inventory';
   const box=document.getElementById('reportsLive');
   const inv=item.inventory;
   const lanes=laneStock(item);
@@ -1015,7 +1073,7 @@ function renderInventoryReport(item){
 }
 
 function renderReports(item){
-  reportsDetail=false;
+  reportsDetail='';
   const box=document.getElementById('reportsLive');
   const inv=item.inventory;
   const stats=machineStats(item);
@@ -1032,16 +1090,18 @@ function renderReports(item){
     ['📍','Location Performance',`Main Office Building Buena Park · ${fill}% fill`],
     ['🗂','Raw Detections Export',`${item.detections.length} slot detections`]
   ];
+  const viewable=['Inventory & Restock Report','Estimated Sales Summary'];
   const cards=reps.map(r=>{
-    const isInv=r[1]==='Inventory & Restock Report';
+    const isView=viewable.includes(r[1]);
     return `<div class="card" style="display:flex;align-items:center;gap:14px">
       <div class="icon bg-blue" style="width:48px;height:48px;font-size:22px">${r[0]}</div>
       <div style="flex:1"><div style="font-weight:700">${r[1]}</div><div class="loc" style="margin-top:3px">${r[2]}</div></div>
-      <button class="btn" data-report='${r[1]}'>${isInv?'View':'Download'}</button></div>`;
+      <button class="btn" data-report='${r[1]}'>${isView?'View':'Download'}</button></div>`;
   }).join('');
   box.innerHTML=`<div class="grid-2">${cards}</div>`;
   box.querySelectorAll('[data-report]').forEach(btn=>btn.addEventListener('click',()=>{
     if(btn.dataset.report==='Inventory & Restock Report'){ renderInventoryReport(item); return; }
+    if(btn.dataset.report==='Estimated Sales Summary'){ renderSalesReport(item); return; }
     const blob=new Blob([JSON.stringify(item,null,2)],{type:'application/json'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download=`${LIVE_DEVICE}-${btn.dataset.report.replace(/\s+/g,'-').toLowerCase()}.json`;
