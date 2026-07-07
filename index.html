@@ -529,22 +529,11 @@ const viewRenderers = {
       ${tableCard('Work Orders','<th>Machine</th><th>Task</th><th class="num">Status</th>',rows)}`;
   },
   locations(){
-    const locs=[
-      ['Main Office Building',6,'$4,850','online'],
-      ['Tech Park Center',5,'$4,120','online'],
-      ['University Campus',4,'$3,680','online'],
-      ['Hospital Lobby',3,'$2,950','online'],
-      ['Airport Terminal A',3,'$2,450','offline'],
-      ['Shopping Mall',2,'$2,150','online']
-    ];
-    const cards=locs.map(l=>`<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div style="font-weight:700;font-size:15px">📍 ${l[0]}</div>
-        <div class="loc" style="margin-top:4px">${l[1]} machines</div></div>
-        <span class="st st-${l[3]}">${stLabel[l[3]]}</span></div>
-      <div style="margin-top:14px;font-size:22px;font-weight:800">${l[2]}<span class="loc" style="font-size:11px;font-weight:500"> / week</span></div>
-    </div>`).join('');
-    return `<div class="grid-3">${cards}</div>`;
+    return `<div class="inv-controls">
+        <span class="live-dot">Live</span>
+        <span class="loc" id="locUpdated"></span>
+      </div>
+      <div id="locLive"><div class="card"><p class="empty-note">Loading live locations…</p></div></div>`;
   },
   reports(){
     const reps=[
@@ -778,6 +767,42 @@ function renderMachines(item){
     ${tableCard('Live Machines','<th>Machine</th><th>Status</th><th>Fill</th><th class="num">Occupied</th><th class="num">Fill %</th>',rows)}`;
 }
 
+const LOCATION_NAME='Main Office Building Buena Park';
+
+async function loadLocations(){
+  const box=document.getElementById('locLive');
+  if(!box) return;
+  try{
+    renderLocations(await fetchDevice(LIVE_DEVICE));
+  }catch(err){
+    box.innerHTML=`<div class="card"><h3>Live Locations</h3><p class="empty-note">Couldn't load live locations. ${err.message}</p></div>`;
+  }
+}
+
+function renderLocations(item){
+  const box=document.getElementById('locLive');
+  const stats=machineStats(item);
+  const upd=document.getElementById('locUpdated');
+  if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+
+  const total=stats.length;
+  const online=stats.filter(m=>m.status==='online').length;
+  const occ=stats.reduce((s,m)=>s+m.occupied,0);
+  const slots=stats.reduce((s,m)=>s+m.total,0);
+  const fill=slots?Math.round(occ/slots*100):0;
+  const status=online>0?'online':'offline';
+
+  box.innerHTML=`<div class="grid-3"><div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div style="font-weight:700;font-size:15px">📍 ${LOCATION_NAME}</div>
+        <div class="loc" style="margin-top:4px">${total} machines · ${online} online</div></div>
+        <span class="st st-${status}">${stLabel[status]}</span></div>
+      <div style="margin-top:14px;font-size:22px;font-weight:800">${occ} / ${slots}<span class="loc" style="font-size:11px;font-weight:500"> slots filled</span></div>
+      <div class="fillbar" style="margin-top:12px;max-width:none"><span style="width:${fill}%"></span></div>
+      <div class="loc" style="margin-top:8px;font-size:12px">${fill}% fill rate</div>
+    </div></div>`;
+}
+
 const dashEl=document.getElementById('view-dashboard');
 const genEl=document.getElementById('view-generic');
 const titleEl=document.getElementById('pageTitle');
@@ -815,6 +840,10 @@ function showView(name){
   if(name==='machines'){
     loadMachines();
     invTimer=setInterval(loadMachines,30000);
+  }
+  if(name==='locations'){
+    loadLocations();
+    invTimer=setInterval(loadLocations,30000);
   }
   if(name==='inventory'){
     const run=()=>loadInventory(document.getElementById('invDevice').value.trim());
