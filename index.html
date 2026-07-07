@@ -175,6 +175,9 @@
   .bar>span{display:block;height:100%;background:var(--blue);border-radius:6px}
   .fillbar{height:8px;border-radius:6px;background:var(--panel-2);overflow:hidden;min-width:90px;max-width:160px}
   .fillbar>span{display:block;height:100%;background:linear-gradient(90deg,#2f7df0,#25c26e);border-radius:6px}
+  .price-in{display:inline-flex;align-items:center;gap:3px;justify-content:flex-end;color:var(--muted);font-size:13px}
+  .price-in input{width:70px;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:5px 7px;color:var(--text);font-size:13px;text-align:right;font-family:inherit}
+  .price-in input:focus{outline:none;border-color:var(--blue)}
   .empty-note{color:var(--muted);font-size:13px;margin-top:6px}
   .setting-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-top:1px solid var(--border)}
   .setting-row:first-child{border-top:none}
@@ -819,7 +822,29 @@ function renderAlerts(item){
   box.innerHTML=`<div class="card"><h3>All Alerts <span class="badge-count">${alerts.length}</span></h3>${rows}</div>`;
 }
 
-const UNIT_PRICE=2.50; // assumed avg price for inventory-derived revenue estimate
+/* Per-lane pricing, saved locally so it persists across refreshes */
+const PRICE_KEY='vendit-prices';
+const DEFAULT_PRICE=2.50;
+function loadPrices(){ try{ return JSON.parse(localStorage.getItem(PRICE_KEY))||{}; }catch(e){ return {}; } }
+function savePrice(key,val){ const p=loadPrices(); p[key]=val; localStorage.setItem(PRICE_KEY,JSON.stringify(p)); }
+function priceFor(prices,key){ return (key in prices) ? prices[key] : DEFAULT_PRICE; }
+function fmtUSD(n){ return '$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* Aggregate live detections into lanes (one machine+row = one priced item) */
+function salesRows(item){
+  const prices=loadPrices();
+  const map={};
+  item.detections.forEach(d=>{
+    const key=d.machine+'|'+d.row;
+    (map[key]=map[key]||{key,machine:d.machine,row:d.row,total:0,occ:0});
+    map[key].total++; if(d.occupied) map[key].occ++;
+  });
+  return Object.values(map)
+    .sort((a,b)=>a.machine.localeCompare(b.machine)||a.row.localeCompare(b.row,undefined,{numeric:true}))
+    .map(r=>{ r.empty=r.total-r.occ; r.price=priceFor(prices,r.key); r.rev=r.empty*r.price; return r; });
+}
+
+function estimatedRevenue(item){ return salesRows(item).reduce((s,r)=>s+r.rev,0); }
 
 async function loadSales(){
   const box=document.getElementById('salesLive');
@@ -830,28 +855,51 @@ async function loadSales(){
 
 function renderSales(item){
   const box=document.getElementById('salesLive');
+  // Don't rebuild (and blow away focus) while the user is editing a price
+  if(box.querySelector('input[data-price-key]')===document.activeElement){ recalcSales(item); return; }
   const inv=item.inventory;
-  const stats=machineStats(item);
   const upd=document.getElementById('salesUpdated');
   if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
-  const money=n=>'$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-  const vended=inv.empty_count;
-  const est=vended*UNIT_PRICE;
+  const rows=salesRows(item);
+  const vended=rows.reduce((s,r)=>s+r.empty,0);
+  const revenue=rows.reduce((s,r)=>s+r.rev,0);
   const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
-  const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
-  const rows=stats.map(m=>{
-    const sold=m.total-m.occupied;
-    return `<tr><td class="mono">${m.name}</td><td class="num mono">${sold}</td><td class="num mono">${money(sold*UNIT_PRICE)}</td><td class="num mono">${m.fill}%</td></tr>`;
-  }).join('');
+  const kpi=(l,v,cls,ic,id)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val"${id?` id="${id}"`:''}>${v}</div></div></div>`;
+  const rowsHtml=rows.map(r=>`<tr>
+      <td class="mono">${r.machine}</td>
+      <td class="mono">${r.row}</td>
+      <td class="num mono">${r.occ}/${r.total}</td>
+      <td class="num mono">${r.empty}</td>
+      <td class="num"><span class="price-in">$<input type="number" min="0" step="0.05" value="${r.price.toFixed(2)}" data-price-key="${r.key}"></span></td>
+      <td class="num mono" data-rev="${r.key}">${fmtUSD(r.rev)}</td>
+    </tr>`).join('');
   box.innerHTML=`
-    <div class="card"><p class="empty-note" style="margin:0">Estimated from live inventory — the CV API exposes stock levels, not a transaction feed. Units vended ≈ empty slots; revenue assumes ${money(UNIT_PRICE)}/unit.</p></div>
+    <div class="card"><p class="empty-note" style="margin:0">Estimated from live inventory — the CV API exposes stock levels, not a transaction feed. Units vended ≈ empty slots. Set a price per lane below; revenue recalculates instantly and is saved on this device.</p></div>
     <div class="grid-4">
       ${kpi('Units Vended (est.)',vended,'solid-green','🛒')}
-      ${kpi('Est. Revenue',money(est),'solid-purple','💲')}
+      ${kpi('Est. Revenue',fmtUSD(revenue),'solid-purple','💲','salesRevenue')}
       ${kpi('Occupied Slots',inv.occupied_count+' / '+inv.total_slots,'solid-blue','📦')}
       ${kpi('Fill Rate',fill+'%','solid-orange','📊')}
     </div>
-    ${tableCard('Estimated Sales by Machine','<th>Machine</th><th class="num">Units (est.)</th><th class="num">Revenue (est.)</th><th class="num">Fill %</th>',rows)}`;
+    ${tableCard('Pricing & Estimated Sales by Lane','<th>Machine</th><th>Lane</th><th class="num">Occupied</th><th class="num">Units (est.)</th><th class="num">Price</th><th class="num">Revenue (est.)</th>',rowsHtml)}`;
+  box.querySelectorAll('input[data-price-key]').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      savePrice(inp.dataset.priceKey, parseFloat(inp.value)||0);
+      recalcSales(item);
+    });
+  });
+}
+
+function recalcSales(item){
+  const rows=salesRows(item);
+  let revenue=0;
+  rows.forEach(r=>{
+    revenue+=r.rev;
+    const cell=document.querySelector(`[data-rev="${r.key}"]`);
+    if(cell) cell.textContent=fmtUSD(r.rev);
+  });
+  const el=document.getElementById('salesRevenue');
+  if(el) el.textContent=fmtUSD(revenue);
 }
 
 async function loadReports(){
@@ -873,7 +921,7 @@ function renderReports(item){
   const reps=[
     ['📦','Inventory & Restock Report',`${inv.empty_count} of ${inv.total_slots} slots empty · ${fill}% filled`],
     ['🖥','Machine Uptime Report',`${online} of ${stats.length} machines online`],
-    ['🛒','Estimated Sales Summary',`${inv.empty_count} units vended (est.) across ${stats.length} machines`],
+    ['🛒','Estimated Sales Summary',`${inv.empty_count} units vended (est.) · ${fmtUSD(estimatedRevenue(item))}`],
     ['⛔','Stock Alerts Report',`${alerts.length} active stock alert${alerts.length===1?'':'s'}`],
     ['📍','Location Performance',`Main Office Building Buena Park · ${fill}% fill`],
     ['🗂','Raw Detections Export',`${item.detections.length} slot detections`]
