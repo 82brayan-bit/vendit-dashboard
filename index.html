@@ -822,17 +822,21 @@ function renderAlerts(item){
   box.innerHTML=`<div class="card"><h3>All Alerts <span class="badge-count">${alerts.length}</span></h3>${rows}</div>`;
 }
 
-/* Per-lane pricing, saved locally so it persists across refreshes */
+/* Per-lane pricing & unit overrides, saved locally so they persist across refreshes */
 const PRICE_KEY='vendit-prices';
+const UNITS_KEY='vendit-units';
 const DEFAULT_PRICE=2.50;
-function loadPrices(){ try{ return JSON.parse(localStorage.getItem(PRICE_KEY))||{}; }catch(e){ return {}; } }
-function savePrice(key,val){ const p=loadPrices(); p[key]=val; localStorage.setItem(PRICE_KEY,JSON.stringify(p)); }
+function loadStore(k){ try{ return JSON.parse(localStorage.getItem(k))||{}; }catch(e){ return {}; } }
+function saveStore(k,key,val){ const s=loadStore(k); s[key]=val; localStorage.setItem(k,JSON.stringify(s)); }
+function loadPrices(){ return loadStore(PRICE_KEY); }
+function savePrice(key,val){ saveStore(PRICE_KEY,key,val); }
 function priceFor(prices,key){ return (key in prices) ? prices[key] : DEFAULT_PRICE; }
 function fmtUSD(n){ return '$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 /* Aggregate live detections into lanes (one machine+row = one priced item) */
 function salesRows(item){
   const prices=loadPrices();
+  const units=loadStore(UNITS_KEY);
   const map={};
   item.detections.forEach(d=>{
     const key=d.machine+'|'+d.row;
@@ -841,7 +845,13 @@ function salesRows(item){
   });
   return Object.values(map)
     .sort((a,b)=>a.machine.localeCompare(b.machine)||a.row.localeCompare(b.row,undefined,{numeric:true}))
-    .map(r=>{ r.empty=r.total-r.occ; r.price=priceFor(prices,r.key); r.rev=r.empty*r.price; return r; });
+    .map(r=>{
+      r.empty=r.total-r.occ;
+      r.units=(r.key in units) ? units[r.key] : r.empty; // editable, defaults to empty slots
+      r.price=priceFor(prices,r.key);
+      r.rev=r.units*r.price;
+      return r;
+    });
 }
 
 function estimatedRevenue(item){ return salesRows(item).reduce((s,r)=>s+r.rev,0); }
@@ -855,13 +865,13 @@ async function loadSales(){
 
 function renderSales(item){
   const box=document.getElementById('salesLive');
-  // Don't rebuild (and blow away focus) while the user is editing a price
-  if(box.querySelector('input[data-price-key]')===document.activeElement){ recalcSales(item); return; }
+  // Don't rebuild (and blow away focus) while the user is editing a field
+  if(box.contains(document.activeElement) && document.activeElement.tagName==='INPUT'){ recalcSales(item); return; }
   const inv=item.inventory;
   const upd=document.getElementById('salesUpdated');
   if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
   const rows=salesRows(item);
-  const vended=rows.reduce((s,r)=>s+r.empty,0);
+  const vended=rows.reduce((s,r)=>s+r.units,0);
   const revenue=rows.reduce((s,r)=>s+r.rev,0);
   const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
   const kpi=(l,v,cls,ic,id)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val"${id?` id="${id}"`:''}>${v}</div></div></div>`;
@@ -869,14 +879,14 @@ function renderSales(item){
       <td class="mono">${r.machine}</td>
       <td class="mono">${r.row}</td>
       <td class="num mono">${r.occ}/${r.total}</td>
-      <td class="num mono">${r.empty}</td>
+      <td class="num"><span class="price-in"><input type="number" min="0" step="1" value="${r.units}" data-units-key="${r.key}"></span></td>
       <td class="num"><span class="price-in">$<input type="number" min="0" step="0.05" value="${r.price.toFixed(2)}" data-price-key="${r.key}"></span></td>
       <td class="num mono" data-rev="${r.key}">${fmtUSD(r.rev)}</td>
     </tr>`).join('');
   box.innerHTML=`
-    <div class="card"><p class="empty-note" style="margin:0">Estimated from live inventory — the CV API exposes stock levels, not a transaction feed. Units vended ≈ empty slots. Set a price per lane below; revenue recalculates instantly and is saved on this device.</p></div>
+    <div class="card"><p class="empty-note" style="margin:0">Estimated from live inventory — the CV API exposes stock levels, not a transaction feed. Units default to empty slots; edit units or price per lane and revenue recalculates instantly. Values are saved on this device.</p></div>
     <div class="grid-4">
-      ${kpi('Units Vended (est.)',vended,'solid-green','🛒')}
+      ${kpi('Units Vended (est.)',vended,'solid-green','🛒','salesUnits')}
       ${kpi('Est. Revenue',fmtUSD(revenue),'solid-purple','💲','salesRevenue')}
       ${kpi('Occupied Slots',inv.occupied_count+' / '+inv.total_slots,'solid-blue','📦')}
       ${kpi('Fill Rate',fill+'%','solid-orange','📊')}
@@ -888,18 +898,26 @@ function renderSales(item){
       recalcSales(item);
     });
   });
+  box.querySelectorAll('input[data-units-key]').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      saveStore(UNITS_KEY, inp.dataset.unitsKey, Math.max(0,Math.round(parseFloat(inp.value)||0)));
+      recalcSales(item);
+    });
+  });
 }
 
 function recalcSales(item){
   const rows=salesRows(item);
-  let revenue=0;
+  let revenue=0,vended=0;
   rows.forEach(r=>{
-    revenue+=r.rev;
+    revenue+=r.rev; vended+=r.units;
     const cell=document.querySelector(`[data-rev="${r.key}"]`);
     if(cell) cell.textContent=fmtUSD(r.rev);
   });
-  const el=document.getElementById('salesRevenue');
-  if(el) el.textContent=fmtUSD(revenue);
+  const rev=document.getElementById('salesRevenue');
+  if(rev) rev.textContent=fmtUSD(revenue);
+  const u=document.getElementById('salesUnits');
+  if(u) u.textContent=vended;
 }
 
 async function loadReports(){
