@@ -931,14 +931,91 @@ function recalcSales(item){
   if(u) u.textContent=vended;
 }
 
+let reportsDetail=false; // true while the Inventory & Restock detail is open
+
 async function loadReports(){
   const box=document.getElementById('reportsLive');
   if(!box) return;
-  try{ renderReports(await fetchDevice(LIVE_DEVICE)); }
+  try{
+    const item=await fetchDevice(LIVE_DEVICE);
+    reportsDetail ? renderInventoryReport(item) : renderReports(item);
+  }
   catch(err){ box.innerHTML=`<div class="card"><h3>Live Reports</h3><p class="empty-note">Couldn't load live reports. ${err.message}</p></div>`; }
 }
 
+/* Per-lane physical stock (actual slots, for restock decisions) */
+function laneStock(item){
+  const map={};
+  item.detections.forEach(d=>{
+    const key=d.machine+'|'+d.row;
+    (map[key]=map[key]||{machine:d.machine,row:d.row,total:0,occ:0});
+    map[key].total++; if(d.occupied) map[key].occ++;
+  });
+  return Object.values(map)
+    .map(l=>{ l.empty=l.total-l.occ; l.status=l.occ===0?'OUT':(l.empty/l.total>=0.5?'LOW':'OK'); return l; })
+    .sort((a,b)=>a.machine.localeCompare(b.machine)||a.row.localeCompare(b.row,undefined,{numeric:true}));
+}
+
+function inventoryReportText(item){
+  const inv=item.inventory;
+  const lanes=laneStock(item);
+  const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
+  const need=lanes.filter(l=>l.empty>0).sort((a,b)=>b.empty-a.empty);
+  const L=['INVENTORY & RESTOCK REPORT',
+    'Device '+LIVE_DEVICE+' · '+new Date(item.timestamp*1000).toLocaleString(),'',
+    'SUMMARY',
+    `${inv.total_slots} slots · ${inv.occupied_count} filled · ${inv.empty_count} empty · ${fill}% filled`,
+    `${need.length} of ${lanes.length} lanes need restock`,'',
+    'RESTOCK LIST (most urgent first)'];
+  if(!need.length) L.push('All lanes fully stocked.');
+  need.forEach(l=>L.push(`${(l.machine+' '+l.row).padEnd(9)}  ${l.occ}/${l.total} filled   refill ${String(l.empty).padStart(2)}   ${l.status}`));
+  return L.join('\n');
+}
+
+function renderInventoryReport(item){
+  reportsDetail=true;
+  const box=document.getElementById('reportsLive');
+  const inv=item.inventory;
+  const lanes=laneStock(item);
+  const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
+  const need=lanes.filter(l=>l.empty>0).sort((a,b)=>b.empty-a.empty);
+  const upd=document.getElementById('reportsUpdated');
+  if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+  const badge=s=>s==='OUT'?'c-red':(s==='LOW'?'c-orange':'up');
+  const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
+  const list=(need.length?need:lanes);
+  const rows=list.map(l=>`<tr>
+      <td class="mono">${l.machine} ${l.row}</td>
+      <td class="num mono">${l.occ}/${l.total}</td>
+      <td class="num mono">${l.empty}</td>
+      <td class="num ${badge(l.status)}">${l.status}</td>
+    </tr>`).join('');
+  box.innerHTML=`
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div><div style="font-weight:800;font-size:16px">📦 Inventory &amp; Restock Report</div>
+        <div class="loc" style="margin-top:3px">${LIVE_DEVICE} · ${new Date(item.timestamp*1000).toLocaleString()}</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="repTxt">Download .txt</button>
+        <button class="btn ghost" id="repBack">← Back</button>
+      </div>
+    </div>
+    <div class="grid-4">
+      ${kpi('Total Slots',inv.total_slots,'solid-blue','📦')}
+      ${kpi('Filled',inv.occupied_count+' · '+fill+'%','solid-green','✔')}
+      ${kpi('Empty',inv.empty_count,'solid-orange','▢')}
+      ${kpi('Lanes to Restock',need.length+' / '+lanes.length,'solid-red','🔻')}
+    </div>
+    ${tableCard('Restock List — most urgent first','<th>Lane</th><th class="num">Filled</th><th class="num">To Refill</th><th class="num">Status</th>',rows)}`;
+  document.getElementById('repBack').addEventListener('click',()=>renderReports(item));
+  document.getElementById('repTxt').addEventListener('click',()=>{
+    const blob=new Blob([inventoryReportText(item)],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`${LIVE_DEVICE}-inventory-restock-report.txt`; a.click(); URL.revokeObjectURL(a.href);
+  });
+}
+
 function renderReports(item){
+  reportsDetail=false;
   const box=document.getElementById('reportsLive');
   const inv=item.inventory;
   const stats=machineStats(item);
@@ -955,12 +1032,16 @@ function renderReports(item){
     ['📍','Location Performance',`Main Office Building Buena Park · ${fill}% fill`],
     ['🗂','Raw Detections Export',`${item.detections.length} slot detections`]
   ];
-  const cards=reps.map(r=>`<div class="card" style="display:flex;align-items:center;gap:14px">
-    <div class="icon bg-blue" style="width:48px;height:48px;font-size:22px">${r[0]}</div>
-    <div style="flex:1"><div style="font-weight:700">${r[1]}</div><div class="loc" style="margin-top:3px">${r[2]}</div></div>
-    <button class="btn" data-report='${r[1]}'>Download</button></div>`).join('');
+  const cards=reps.map(r=>{
+    const isInv=r[1]==='Inventory & Restock Report';
+    return `<div class="card" style="display:flex;align-items:center;gap:14px">
+      <div class="icon bg-blue" style="width:48px;height:48px;font-size:22px">${r[0]}</div>
+      <div style="flex:1"><div style="font-weight:700">${r[1]}</div><div class="loc" style="margin-top:3px">${r[2]}</div></div>
+      <button class="btn" data-report='${r[1]}'>${isInv?'View':'Download'}</button></div>`;
+  }).join('');
   box.innerHTML=`<div class="grid-2">${cards}</div>`;
   box.querySelectorAll('[data-report]').forEach(btn=>btn.addEventListener('click',()=>{
+    if(btn.dataset.report==='Inventory & Restock Report'){ renderInventoryReport(item); return; }
     const blob=new Blob([JSON.stringify(item,null,2)],{type:'application/json'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download=`${LIVE_DEVICE}-${btn.dataset.report.replace(/\s+/g,'-').toLowerCase()}.json`;
