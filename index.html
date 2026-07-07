@@ -469,22 +469,11 @@ const viewRenderers = {
       <div id="machLive"><div class="card"><p class="empty-note">Loading live machines…</p></div></div>`;
   },
   sales(){
-    const kpi=(l,v,d,cls)=>`<div class="card kpi"><div class="icon ${cls}">💲</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div><div class="k-delta up">▲ ${d}</div></div></div>`;
-    const tx=[
-      ['#TX-88421','VM-1023','Coca-Cola 12oz','$2.50','9:42 AM'],
-      ['#TX-88420','VM-1007','Lay\'s Classic','$1.75','9:38 AM'],
-      ['#TX-88419','VM-1015','Monster Energy','$3.25','9:31 AM'],
-      ['#TX-88418','VM-1032','Snickers Bar','$1.50','9:27 AM'],
-      ['#TX-88417','VM-1001','Dasani Water','$1.25','9:19 AM']
-    ].map(r=>`<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td class="loc">${r[2]}</td><td class="num mono">${r[3]}</td><td class="num loc">${r[4]}</td></tr>`).join('');
-    return `<div class="grid-4">
-        ${kpi('Total Sales','$24,680','12.5%','solid-green')}
-        ${kpi('Transactions','1,842','9.3%','solid-purple')}
-        ${kpi('Avg. Sale','$13.40','2.1%','solid-blue')}
-        ${kpi('Refunds','$180','','solid-orange')}
+    return `<div class="inv-controls">
+        <span class="live-dot">Live</span>
+        <span class="loc" id="salesUpdated"></span>
       </div>
-      <div class="card"><h3>Sales Over Time</h3><div class="chart-wrap"><canvas id="salesLine2"></canvas></div></div>
-      ${tableCard('Recent Transactions','<th>ID</th><th>Machine</th><th>Product</th><th class="num">Amount</th><th class="num">Time</th>',tx)}`;
+      <div id="salesLive"><div class="card"><p class="empty-note">Loading live sales…</p></div></div>`;
   },
   inventory(){
     return `<div class="inv-controls">
@@ -496,20 +485,11 @@ const viewRenderers = {
       <div id="invLive"><div class="card"><p class="empty-note">Loading live inventory…</p></div></div>`;
   },
   alerts(){
-    const data=[
-      ['bg-red','⛔','VM-1011 is out of service','Critical','Jun 7, 2025 · 9:15 AM'],
-      ['bg-orange','🌡','High temperature alert – VM-1005','Warning','Jun 7, 2025 · 8:42 AM'],
-      ['bg-red','💳','Payment system error – VM-1022','Critical','Jun 7, 2025 · 7:30 AM'],
-      ['bg-orange','🔋','Low battery – VM-1015 sensor','Warning','Jun 6, 2025 · 6:10 PM'],
-      ['bg-blue','ℹ','Firmware update available – 12 machines','Info','Jun 6, 2025 · 2:00 PM'],
-      ['bg-orange','📶','Intermittent connectivity – VM-1005','Warning','Jun 6, 2025 · 11:24 AM'],
-      ['bg-blue','ℹ','Scheduled restock completed – VM-1001','Info','Jun 6, 2025 · 8:05 AM']
-    ];
-    const rows=data.map(a=>`<div class="alert-item">
-      <div class="a-ico ${a[0]}">${a[1]}</div>
-      <div class="a-txt">${a[2]}<div class="loc">${a[3]}</div></div>
-      <div class="a-time">${a[4]}</div></div>`).join('');
-    return `<div class="card"><h3>All Alerts <span class="badge-count">7</span></h3>${rows}</div>`;
+    return `<div class="inv-controls">
+        <span class="live-dot">Live</span>
+        <span class="loc" id="alertsUpdated"></span>
+      </div>
+      <div id="alertsLive"><div class="card"><p class="empty-note">Loading live alerts…</p></div></div>`;
   },
   maintenance(){
     const rows=[
@@ -536,19 +516,11 @@ const viewRenderers = {
       <div id="locLive"><div class="card"><p class="empty-note">Loading live locations…</p></div></div>`;
   },
   reports(){
-    const reps=[
-      ['📊','Weekly Sales Summary','Revenue, transactions and top products'],
-      ['📦','Inventory & Restock Report','Stock levels and reorder recommendations'],
-      ['🖥','Machine Uptime Report','Online/offline history and downtime'],
-      ['🔧','Maintenance Log','Completed and pending work orders'],
-      ['📍','Location Performance','Revenue breakdown by site'],
-      ['💳','Payment Reconciliation','Transactions, refunds and settlements']
-    ];
-    const cards=reps.map(r=>`<div class="card" style="display:flex;align-items:center;gap:14px">
-      <div class="icon bg-blue" style="width:48px;height:48px;font-size:22px">${r[0]}</div>
-      <div style="flex:1"><div style="font-weight:700">${r[1]}</div><div class="loc" style="margin-top:3px">${r[2]}</div></div>
-      <button class="btn">Download</button></div>`).join('');
-    return `<div class="grid-2">${cards}</div>`;
+    return `<div class="inv-controls">
+        <span class="live-dot">Live</span>
+        <span class="loc" id="reportsUpdated"></span>
+      </div>
+      <div id="reportsLive"><div class="card"><p class="empty-note">Loading live reports…</p></div></div>`;
   },
   customers(){
     const rows=[
@@ -803,6 +775,122 @@ function renderLocations(item){
     </div></div>`;
 }
 
+/* Derive stock alerts from live per-row occupancy */
+function inventoryAlerts(item){
+  const online=(Date.now()/1000 - item.timestamp) < 7200;
+  const rows={};
+  item.detections.forEach(d=>{
+    const k=d.machine+'|'+d.row;
+    (rows[k]=rows[k]||{machine:d.machine,row:d.row,empty:0,total:0});
+    rows[k].total++; if(!d.occupied) rows[k].empty++;
+  });
+  const alerts=[];
+  if(!online) alerts.push({sev:'Critical',ico:'📶',cls:'bg-red',msg:`${LIVE_DEVICE} is offline (data is stale)`});
+  Object.values(rows).forEach(r=>{
+    if(r.empty===r.total) alerts.push({sev:'Critical',ico:'⛔',cls:'bg-red',msg:`${r.machine} · Row ${r.row} is out of stock`,detail:`${r.empty}/${r.total} slots empty`});
+    else if(r.empty/r.total>=0.5) alerts.push({sev:'Warning',ico:'🛒',cls:'bg-orange',msg:`${r.machine} · Row ${r.row} is low on stock`,detail:`${r.empty}/${r.total} slots empty`});
+  });
+  const order={Critical:0,Warning:1,Info:2};
+  alerts.sort((a,b)=>(order[a.sev]-order[b.sev]));
+  return alerts;
+}
+
+async function loadAlerts(){
+  const box=document.getElementById('alertsLive');
+  if(!box) return;
+  try{ renderAlerts(await fetchDevice(LIVE_DEVICE)); }
+  catch(err){ box.innerHTML=`<div class="card"><h3>Live Alerts</h3><p class="empty-note">Couldn't load live alerts. ${err.message}</p></div>`; }
+}
+
+function renderAlerts(item){
+  const box=document.getElementById('alertsLive');
+  const alerts=inventoryAlerts(item);
+  const upd=document.getElementById('alertsUpdated');
+  if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+  const when=new Date(item.timestamp*1000).toLocaleString();
+  if(!alerts.length){
+    box.innerHTML=`<div class="card"><h3>All Alerts <span class="badge-count">0</span></h3><p class="empty-note">No active stock alerts — all rows above threshold.</p></div>`;
+    return;
+  }
+  const rows=alerts.map(a=>`<div class="alert-item">
+      <div class="a-ico ${a.cls}">${a.ico}</div>
+      <div class="a-txt">${a.msg}<div class="loc">${a.sev}${a.detail?' · '+a.detail:''}</div></div>
+      <div class="a-time">${when}</div></div>`).join('');
+  box.innerHTML=`<div class="card"><h3>All Alerts <span class="badge-count">${alerts.length}</span></h3>${rows}</div>`;
+}
+
+const UNIT_PRICE=2.50; // assumed avg price for inventory-derived revenue estimate
+
+async function loadSales(){
+  const box=document.getElementById('salesLive');
+  if(!box) return;
+  try{ renderSales(await fetchDevice(LIVE_DEVICE)); }
+  catch(err){ box.innerHTML=`<div class="card"><h3>Live Sales</h3><p class="empty-note">Couldn't load live sales. ${err.message}</p></div>`; }
+}
+
+function renderSales(item){
+  const box=document.getElementById('salesLive');
+  const inv=item.inventory;
+  const stats=machineStats(item);
+  const upd=document.getElementById('salesUpdated');
+  if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+  const money=n=>'$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const vended=inv.empty_count;
+  const est=vended*UNIT_PRICE;
+  const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
+  const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
+  const rows=stats.map(m=>{
+    const sold=m.total-m.occupied;
+    return `<tr><td class="mono">${m.name}</td><td class="num mono">${sold}</td><td class="num mono">${money(sold*UNIT_PRICE)}</td><td class="num mono">${m.fill}%</td></tr>`;
+  }).join('');
+  box.innerHTML=`
+    <div class="card"><p class="empty-note" style="margin:0">Estimated from live inventory — the CV API exposes stock levels, not a transaction feed. Units vended ≈ empty slots; revenue assumes ${money(UNIT_PRICE)}/unit.</p></div>
+    <div class="grid-4">
+      ${kpi('Units Vended (est.)',vended,'solid-green','🛒')}
+      ${kpi('Est. Revenue',money(est),'solid-purple','💲')}
+      ${kpi('Occupied Slots',inv.occupied_count+' / '+inv.total_slots,'solid-blue','📦')}
+      ${kpi('Fill Rate',fill+'%','solid-orange','📊')}
+    </div>
+    ${tableCard('Estimated Sales by Machine','<th>Machine</th><th class="num">Units (est.)</th><th class="num">Revenue (est.)</th><th class="num">Fill %</th>',rows)}`;
+}
+
+async function loadReports(){
+  const box=document.getElementById('reportsLive');
+  if(!box) return;
+  try{ renderReports(await fetchDevice(LIVE_DEVICE)); }
+  catch(err){ box.innerHTML=`<div class="card"><h3>Live Reports</h3><p class="empty-note">Couldn't load live reports. ${err.message}</p></div>`; }
+}
+
+function renderReports(item){
+  const box=document.getElementById('reportsLive');
+  const inv=item.inventory;
+  const stats=machineStats(item);
+  const online=stats.filter(m=>m.status==='online').length;
+  const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
+  const alerts=inventoryAlerts(item);
+  const upd=document.getElementById('reportsUpdated');
+  if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+  const reps=[
+    ['📦','Inventory & Restock Report',`${inv.empty_count} of ${inv.total_slots} slots empty · ${fill}% filled`],
+    ['🖥','Machine Uptime Report',`${online} of ${stats.length} machines online`],
+    ['🛒','Estimated Sales Summary',`${inv.empty_count} units vended (est.) across ${stats.length} machines`],
+    ['⛔','Stock Alerts Report',`${alerts.length} active stock alert${alerts.length===1?'':'s'}`],
+    ['📍','Location Performance',`Main Office Building Buena Park · ${fill}% fill`],
+    ['🗂','Raw Detections Export',`${item.detections.length} slot detections`]
+  ];
+  const cards=reps.map(r=>`<div class="card" style="display:flex;align-items:center;gap:14px">
+    <div class="icon bg-blue" style="width:48px;height:48px;font-size:22px">${r[0]}</div>
+    <div style="flex:1"><div style="font-weight:700">${r[1]}</div><div class="loc" style="margin-top:3px">${r[2]}</div></div>
+    <button class="btn" data-report='${r[1]}'>Download</button></div>`).join('');
+  box.innerHTML=`<div class="grid-2">${cards}</div>`;
+  box.querySelectorAll('[data-report]').forEach(btn=>btn.addEventListener('click',()=>{
+    const blob=new Blob([JSON.stringify(item,null,2)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`${LIVE_DEVICE}-${btn.dataset.report.replace(/\s+/g,'-').toLowerCase()}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+  }));
+}
+
 const dashEl=document.getElementById('view-dashboard');
 const genEl=document.getElementById('view-generic');
 const titleEl=document.getElementById('pageTitle');
@@ -825,14 +913,16 @@ function showView(name){
   dashEl.hidden=true; genEl.hidden=false;
   genEl.innerHTML=viewRenderers[name] ? viewRenderers[name]() : `<div class="card"><h3>${meta[0]}</h3><p class="empty-note">This section is coming soon.</p></div>`;
   if(name==='sales'){
-    new Chart(document.getElementById('salesLine2'),{
-      type:'line',
-      data:{labels:days,datasets:[{label:'This Week',data:[2000,2900,3400,3200,3800,4100,5900],
-        borderColor:'#2f7df0',backgroundColor:(c)=>{const g=c.chart.ctx.createLinearGradient(0,0,0,210);g.addColorStop(0,'rgba(47,125,240,.35)');g.addColorStop(1,'rgba(47,125,240,0)');return g;},
-        fill:true,tension:.4,pointRadius:3,pointBackgroundColor:'#2f7df0',borderWidth:2.5}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-        scales:{y:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+(v/1000)+'K'},min:0,max:6000},x:{grid:{display:false}}}}
-    });
+    loadSales();
+    invTimer=setInterval(loadSales,30000);
+  }
+  if(name==='alerts'){
+    loadAlerts();
+    invTimer=setInterval(loadAlerts,30000);
+  }
+  if(name==='reports'){
+    loadReports();
+    invTimer=setInterval(loadReports,30000);
   }
   if(name==='settings'){
     genEl.querySelectorAll('[data-toggle]').forEach(t=>t.addEventListener('click',()=>t.classList.toggle('on')));
