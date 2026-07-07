@@ -53,6 +53,8 @@
 
   .machine-card{margin-top:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
   .machine-card img{width:100%;border-radius:8px;margin-bottom:10px;display:block}
+  .brand-logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;padding:6px 0}
+  .brand-word{font-size:30px;font-weight:800;letter-spacing:-1.5px;color:#fff;line-height:1}
   .machine-card .status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px}
   .machine-card .label{font-size:11px;color:var(--muted)}
   .machine-card .healthy{color:var(--green);font-weight:700;font-size:16px;margin:2px 0}
@@ -216,7 +218,21 @@
     <a data-view="settings"><span class="ico">⚙</span> Settings</a>
   </nav>
   <div class="machine-card">
-    <img src="https://images.unsplash.com/photo-1621964275191-ccc01ef2134c?auto=format&fit=crop&w=400&q=60" alt="Vending machine">
+    <div class="brand-logo">
+      <svg viewBox="0 0 110 116" width="46" height="48" role="img" aria-label="item logo">
+        <polygon points="35,23.4 75,23.4 95,58 75,92.6 35,92.6 15,58"
+          fill="#8B3FD4" stroke="#8B3FD4" stroke-width="10" stroke-linejoin="round"/>
+        <!-- dot cube -->
+        <polygon points="48,34 62,34 67,29 53,29" fill="#ededed"/>
+        <polygon points="62,34 67,29 67,41 62,46" fill="#cccccc"/>
+        <rect x="48" y="34" width="14" height="12" fill="#ffffff"/>
+        <!-- stem cube -->
+        <polygon points="48,52 62,52 67,47 53,47" fill="#ededed"/>
+        <polygon points="62,52 67,47 67,75 62,80" fill="#cccccc"/>
+        <rect x="48" y="52" width="14" height="28" fill="#ffffff"/>
+      </svg>
+      <span class="brand-word">item</span>
+    </div>
     <div class="label"><span class="status-dot"></span>System Status</div>
     <div class="healthy">Healthy</div>
     <div class="sub">All systems operational</div>
