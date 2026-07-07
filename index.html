@@ -182,6 +182,18 @@
   .toggle.on::after{left:20px;background:#fff}
   .btn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer}
   .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+
+  /* Live inventory */
+  .inv-controls{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .inv-controls input{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;min-width:210px;font-family:inherit}
+  .live-dot{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
+  .live-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(37,194,110,.2)}
+  .slot-row{display:flex;gap:6px;margin-bottom:6px;align-items:center;flex-wrap:wrap}
+  .slot-row .rlab{width:26px;font-size:10px;color:var(--muted);font-weight:700;flex-shrink:0}
+  .slot{width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;border:1px solid var(--border)}
+  .slot.occ{background:rgba(37,194,110,.22);color:#37d67f;border-color:rgba(37,194,110,.4)}
+  .slot.emp{background:var(--panel-2);color:#4b5a70}
+  .inv-img{width:100%;border-radius:10px;border:1px solid var(--border);display:block}
 </style>
 </head>
 <body>
@@ -469,26 +481,13 @@ const viewRenderers = {
       ${tableCard('Recent Transactions','<th>ID</th><th>Machine</th><th>Product</th><th class="num">Amount</th><th class="num">Time</th>',tx)}`;
   },
   inventory(){
-    const items=[
-      ['Coca-Cola 12oz','Beverages','VM-1023',5,'Low'],
-      ['Lay\'s Classic','Snacks','VM-1007',7,'Low'],
-      ['Monster Energy 16oz','Beverages','VM-1015',6,'Low'],
-      ['Snickers Bar','Candy','VM-1032',8,'Watch'],
-      ['Dasani Water 16oz','Beverages','VM-1001',9,'Watch'],
-      ['Doritos Nacho','Snacks','VM-1005',24,'OK'],
-      ['KitKat','Candy','VM-1023',31,'OK']
-    ];
-    const rows=items.map(i=>{
-      const cls=i[4]==='Low'?'c-red':i[4]==='Watch'?'c-orange':'up';
-      return `<tr><td>${i[0]}</td><td class="loc">${i[1]}</td><td class="mono">${i[2]}</td><td class="num mono ${cls}">${i[3]}</td><td class="num ${cls}">${i[4]}</td></tr>`;
-    }).join('');
-    return `<div class="grid-4">
-        <div class="card kpi"><div class="icon solid-blue">📦</div><div><div class="k-label">SKUs Tracked</div><div class="k-val">148</div></div></div>
-        <div class="card kpi"><div class="icon solid-orange">🛍</div><div><div class="k-label">Out of Stock</div><div class="k-val">23</div></div></div>
-        <div class="card kpi"><div class="icon solid-red">⚠</div><div><div class="k-label">Low Stock</div><div class="k-val">3</div></div></div>
-        <div class="card kpi"><div class="icon solid-green">✔</div><div><div class="k-label">Reorders Sent</div><div class="k-val">12</div></div></div>
+    return `<div class="inv-controls">
+        <input id="invDevice" value="vm-7b123757" placeholder="device_id" spellcheck="false">
+        <button class="btn" id="invRefresh">Refresh</button>
+        <span class="live-dot">Live</span>
+        <span class="loc" id="invUpdated"></span>
       </div>
-      ${tableCard('Inventory Levels','<th>Product</th><th>Category</th><th>Machine</th><th class="num">Qty Left</th><th class="num">Status</th>',rows)}`;
+      <div id="invLive"><div class="card"><p class="empty-note">Loading live inventory…</p></div></div>`;
   },
   alerts(){
     const data=[
@@ -607,6 +606,61 @@ const viewMeta = {
   settings:['SETTINGS','Configure your dashboard']
 };
 
+/* ---- Live vending-machine inventory API ---- */
+const VM_API='https://zed3lnz3j0.execute-api.us-west-2.amazonaws.com/prod/vm-inventory/query';
+
+async function loadInventory(deviceId){
+  const box=document.getElementById('invLive');
+  if(!box) return;
+  box.innerHTML='<div class="card"><p class="empty-note">Loading live inventory…</p></div>';
+  try{
+    const res=await fetch(`${VM_API}?device_id=${encodeURIComponent(deviceId)}&_=${Date.now()}`);
+    const data=await res.json();
+    if(!data.ok||!data.item) throw new Error(data.message||'No data returned');
+    renderInventory(data.item);
+  }catch(err){
+    box.innerHTML=`<div class="card"><h3>Live Inventory</h3><p class="empty-note">Couldn't load data for "${deviceId}". ${err.message}</p></div>`;
+  }
+}
+
+function renderInventory(item){
+  const box=document.getElementById('invLive');
+  const inv=item.inventory;
+  const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
+  const upd=document.getElementById('invUpdated');
+  if(upd) upd.textContent='Updated '+new Date(item.timestamp*1000).toLocaleString();
+
+  const byMachine={};
+  item.detections.forEach(d=>{
+    (byMachine[d.machine]=byMachine[d.machine]||{});
+    (byMachine[d.machine][d.row]=byMachine[d.machine][d.row]||[]).push(d);
+  });
+  const machineCards=Object.keys(byMachine).sort().map(mk=>{
+    const all=item.detections.filter(d=>d.machine===mk);
+    const occ=all.filter(d=>d.occupied).length;
+    const rowsHtml=Object.keys(byMachine[mk]).sort().map(rk=>{
+      const cells=byMachine[mk][rk].sort((a,b)=>a.position-b.position)
+        .map(s=>`<div class="slot ${s.occupied?'occ':'emp'}" title="${s.slot}">${s.position}</div>`).join('');
+      return `<div class="slot-row"><span class="rlab">${rk}</span>${cells}</div>`;
+    }).join('');
+    return `<div class="card"><h3>Column ${mk} · ${occ}/${all.length} filled</h3>${rowsHtml}</div>`;
+  }).join('');
+
+  const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
+  const imgCard=item.image&&item.image.overlay_url
+    ? `<div class="card"><h3>Camera Overlay</h3><img class="inv-img" src="${item.image.overlay_url}" alt="Vending machine overlay"></div>` : '';
+
+  box.innerHTML=`
+    <div class="grid-4">
+      ${kpi('Total Slots',inv.total_slots,'solid-blue','📦')}
+      ${kpi('Occupied',inv.occupied_count,'solid-green','✔')}
+      ${kpi('Empty',inv.empty_count,'solid-orange','▢')}
+      ${kpi('Fill Rate',fill+'%','solid-purple','📊')}
+    </div>
+    <div class="grid-2">${machineCards}</div>
+    ${imgCard}`;
+}
+
 const dashEl=document.getElementById('view-dashboard');
 const genEl=document.getElementById('view-generic');
 const titleEl=document.getElementById('pageTitle');
@@ -636,6 +690,12 @@ function showView(name){
   }
   if(name==='settings'){
     genEl.querySelectorAll('[data-toggle]').forEach(t=>t.addEventListener('click',()=>t.classList.toggle('on')));
+  }
+  if(name==='inventory'){
+    const run=()=>loadInventory(document.getElementById('invDevice').value.trim());
+    document.getElementById('invRefresh').addEventListener('click',run);
+    document.getElementById('invDevice').addEventListener('keydown',e=>{if(e.key==='Enter')run();});
+    run();
   }
 }
 
