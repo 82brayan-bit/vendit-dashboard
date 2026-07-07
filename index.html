@@ -254,7 +254,7 @@
     </div>
     <div class="card kpi">
       <div class="icon solid-orange">🛍</div>
-      <div><div class="k-label">Out of Stock</div><div class="k-val">23</div><div class="k-delta down">▼ 5 vs last week</div></div>
+      <div><div class="k-label">Out of Stock</div><div class="k-val" id="kpiOOS">23</div><div class="k-delta down" id="kpiOOSDelta">▼ 5 vs last week</div></div>
     </div>
     <div class="card kpi">
       <div class="icon solid-red">🔔</div>
@@ -312,11 +312,13 @@
 
     <div class="card">
       <h3>Low Stock Alerts</h3>
+      <div id="lowStockList">
       <div class="stock-item"><div class="thumb">🥤</div><div class="info"><div class="n">Coca-Cola 12oz</div><div class="m">Machine: VM-1023</div></div><div class="left c-red">5<small>LEFT</small></div></div>
       <div class="stock-item"><div class="thumb">🍟</div><div class="info"><div class="n">Lay's Classic</div><div class="m">Machine: VM-1007</div></div><div class="left c-red">7<small>LEFT</small></div></div>
       <div class="stock-item"><div class="thumb">⚡</div><div class="info"><div class="n">Monster Energy 16oz</div><div class="m">Machine: VM-1015</div></div><div class="left c-red">6<small>LEFT</small></div></div>
       <div class="stock-item"><div class="thumb">🍫</div><div class="info"><div class="n">Snickers Bar</div><div class="m">Machine: VM-1032</div></div><div class="left c-orange">8<small>LEFT</small></div></div>
       <div class="stock-item"><div class="thumb">💧</div><div class="info"><div class="n">Dasani Water 16oz</div><div class="m">Machine: VM-1001</div></div><div class="left c-orange">9<small>LEFT</small></div></div>
+      </div>
     </div>
 
     <div class="card">
@@ -608,19 +610,50 @@ const viewMeta = {
 
 /* ---- Live vending-machine inventory API ---- */
 const VM_API='https://zed3lnz3j0.execute-api.us-west-2.amazonaws.com/prod/vm-inventory/query';
+const LIVE_DEVICE='vm-7b123757';
+
+async function fetchDevice(deviceId){
+  const res=await fetch(`${VM_API}?device_id=${encodeURIComponent(deviceId)}&_=${Date.now()}`);
+  const data=await res.json();
+  if(!data.ok||!data.item) throw new Error(data.message||'No data returned');
+  return data.item;
+}
 
 async function loadInventory(deviceId){
   const box=document.getElementById('invLive');
   if(!box) return;
-  box.innerHTML='<div class="card"><p class="empty-note">Loading live inventory…</p></div>';
   try{
-    const res=await fetch(`${VM_API}?device_id=${encodeURIComponent(deviceId)}&_=${Date.now()}`);
-    const data=await res.json();
-    if(!data.ok||!data.item) throw new Error(data.message||'No data returned');
-    renderInventory(data.item);
+    renderInventory(await fetchDevice(deviceId));
   }catch(err){
     box.innerHTML=`<div class="card"><h3>Live Inventory</h3><p class="empty-note">Couldn't load data for "${deviceId}". ${err.message}</p></div>`;
   }
+}
+
+/* Feed live occupied/empty counts into the dashboard overview */
+async function refreshDashboardLive(){
+  try{
+    const item=await fetchDevice(LIVE_DEVICE);
+    const inv=item.inventory;
+    const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
+    const oos=document.getElementById('kpiOOS');
+    const delta=document.getElementById('kpiOOSDelta');
+    if(oos) oos.textContent=inv.empty_count;
+    if(delta){delta.classList.remove('down','up');delta.textContent=`${LIVE_DEVICE} · ${fill}% filled`;}
+    const rows={};
+    item.detections.forEach(d=>{
+      const k=d.machine+'|'+d.row;
+      (rows[k]=rows[k]||{empty:0,total:0,machine:d.machine,row:d.row});
+      rows[k].total++; if(!d.occupied) rows[k].empty++;
+    });
+    const top=Object.values(rows).filter(r=>r.empty>0).sort((a,b)=>b.empty-a.empty).slice(0,5);
+    const list=document.getElementById('lowStockList');
+    if(list&&top.length){
+      list.innerHTML=top.map(r=>{
+        const cls=r.empty>=6?'c-red':'c-orange';
+        return `<div class="stock-item"><div class="thumb">🧃</div><div class="info"><div class="n">Column ${r.machine} · Row ${r.row}</div><div class="m">${r.empty} of ${r.total} slots empty</div></div><div class="left ${cls}">${r.empty}<small>EMPTY</small></div></div>`;
+      }).join('');
+    }
+  }catch(err){/* keep static fallback on error */}
 }
 
 function renderInventory(item){
@@ -666,14 +699,18 @@ const genEl=document.getElementById('view-generic');
 const titleEl=document.getElementById('pageTitle');
 const subEl=document.getElementById('pageSub');
 
+let invTimer=null;
+
 function showView(name){
   const meta=viewMeta[name]||viewMeta.dashboard;
   titleEl.textContent=meta[0];
   subEl.textContent=meta[1];
   document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===name));
   document.querySelector('.main').scrollTop=0;
+  if(invTimer){clearInterval(invTimer);invTimer=null;}
   if(name==='dashboard'){
     dashEl.hidden=false; genEl.hidden=true; genEl.innerHTML='';
+    refreshDashboardLive();
     return;
   }
   dashEl.hidden=true; genEl.hidden=false;
@@ -696,12 +733,16 @@ function showView(name){
     document.getElementById('invRefresh').addEventListener('click',run);
     document.getElementById('invDevice').addEventListener('keydown',e=>{if(e.key==='Enter')run();});
     run();
+    invTimer=setInterval(run,30000);
   }
 }
 
 document.querySelectorAll('.nav a').forEach(a=>{
   a.addEventListener('click',e=>{e.preventDefault();showView(a.dataset.view);});
 });
+
+// Initial dashboard is shown statically — pull live counts on load
+refreshDashboardLive();
 </script>
 </body>
 </html>
