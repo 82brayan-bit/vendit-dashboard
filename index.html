@@ -276,11 +276,11 @@
     </div>
     <div class="card kpi">
       <div class="icon solid-green">💲</div>
-      <div><div class="k-label">Total Sales</div><div class="k-val">$24,680</div><div class="k-delta up">▲ 12.5% vs last week</div></div>
+      <div><div class="k-label">Est. Sales</div><div class="k-val" id="kpiSales">$0</div><div class="k-delta up" id="kpiSalesDelta">live estimate</div></div>
     </div>
     <div class="card kpi">
       <div class="icon solid-purple">🛒</div>
-      <div><div class="k-label">Sales Transactions</div><div class="k-val">1,842</div><div class="k-delta up">▲ 9.3% vs last week</div></div>
+      <div><div class="k-label">Units Sold (est.)</div><div class="k-val" id="kpiUnits">0</div><div class="k-delta up" id="kpiUnitsDelta">live estimate</div></div>
     </div>
     <div class="card kpi">
       <div class="icon solid-orange">🛍</div>
@@ -288,26 +288,22 @@
     </div>
     <div class="card kpi">
       <div class="icon solid-red">🔔</div>
-      <div><div class="k-label">Alerts</div><div class="k-val">7</div><div class="k-delta down">▼ 2 vs last week</div></div>
+      <div><div class="k-label">Alerts</div><div class="k-val" id="kpiAlerts">0</div><div class="k-delta down" id="kpiAlertsDelta">live</div></div>
     </div>
   </div>
 
   <!-- CHARTS ROW -->
   <div class="row three">
     <div class="card">
-      <h3>Sales Over Time</h3>
-      <div class="chart-legend">
-        <div class="li"><span class="line"></span> This Week</div>
-        <div class="li"><span class="line dash"></span> Last Week</div>
-      </div>
+      <h3>Est. Revenue by Lane (Top 8)</h3>
       <div class="chart-wrap"><canvas id="salesLine"></canvas></div>
     </div>
     <div class="card">
-      <h3>Sales By Product Category</h3>
+      <h3>Inventory: Occupied vs Empty</h3>
       <div class="donut-wrap">
         <div class="donut">
           <canvas id="categoryDonut"></canvas>
-          <div class="center"><div class="big">$24,680</div><div class="small">Total Sales</div></div>
+          <div class="center"><div class="big" id="invTotalSlots">0</div><div class="small">Total Slots</div></div>
         </div>
         <div class="legend" id="catLegend"></div>
       </div>
@@ -327,15 +323,11 @@
   <!-- MID ROW -->
   <div class="row three">
     <div class="card">
-      <h3>Top Performing Machines</h3>
+      <h3>Top Selling Lanes (est.)</h3>
       <table>
-        <thead><tr><th>Machine</th><th>Location</th><th class="num">Sales</th><th class="num">vs Last Week</th></tr></thead>
-        <tbody>
-          <tr><td><span class="rank">1</span> VM-1023</td><td class="loc">Main Office Building</td><td class="num mono">$1,485</td><td class="num up">▲ 18.2%</td></tr>
-          <tr><td><span class="rank">2</span> VM-1007</td><td class="loc">Tech Park Center</td><td class="num mono">$1,320</td><td class="num up">▲ 15.7%</td></tr>
-          <tr><td><span class="rank">3</span> VM-1015</td><td class="loc">University Campus</td><td class="num mono">$1,125</td><td class="num up">▲ 10.3%</td></tr>
-          <tr><td><span class="rank">4</span> VM-1032</td><td class="loc">Hospital Lobby</td><td class="num mono">$1,050</td><td class="num up">▲ 9.8%</td></tr>
-          <tr><td><span class="rank">5</span> VM-1001</td><td class="loc">Airport Terminal A</td><td class="num mono">$980</td><td class="num up">▲ 8.1%</td></tr>
+        <thead><tr><th>Item (Lane)</th><th>Location</th><th class="num">Units</th><th class="num">Revenue</th></tr></thead>
+        <tbody id="topLanesBody">
+          <tr><td colspan="4" class="loc">Loading live data…</td></tr>
         </tbody>
       </table>
     </div>
@@ -352,7 +344,7 @@
     </div>
 
     <div class="card">
-      <h3>Sales By Location</h3>
+      <h3>Est. Revenue by Column</h3>
       <div class="chart-wrap" style="height:260px"><canvas id="locationBar"></canvas></div>
     </div>
   </div>
@@ -360,29 +352,27 @@
   <!-- BOTTOM ROW -->
   <div class="row three">
     <div class="card">
-      <h3>Recent Alerts <span class="badge-count">7</span> <a class="view-all">View All</a></h3>
-      <div class="alert-item"><div class="a-ico bg-red">⛔</div><div class="a-txt">VM-1011 is out of service</div><div class="a-time">Jun 7, 2025<br>9:15 AM</div></div>
-      <div class="alert-item"><div class="a-ico bg-orange">🌡</div><div class="a-txt">High temperature alert – VM-1005</div><div class="a-time">Jun 7, 2025<br>8:42 AM</div></div>
-      <div class="alert-item"><div class="a-ico bg-red">💳</div><div class="a-txt">Payment system error – VM-1022</div><div class="a-time">Jun 7, 2025<br>7:30 AM</div></div>
+      <h3>Recent Alerts <span class="badge-count" id="recentAlertsCount">0</span></h3>
+      <div id="recentAlertsList"><p class="empty-note" style="margin:0">Loading live alerts…</p></div>
     </div>
 
     <div class="card">
-      <h3>Maintenance Overview</h3>
+      <h3>Inventory Overview</h3>
       <div class="maint-grid">
-        <div class="maint"><div class="m-ico bg-blue">📅</div><div class="m-num">17</div><div class="m-lab">Scheduled</div></div>
-        <div class="maint"><div class="m-ico bg-orange">🔧</div><div class="m-num">3</div><div class="m-lab">In Progress</div></div>
-        <div class="maint"><div class="m-ico bg-red">📋</div><div class="m-num">5</div><div class="m-lab">Overdue</div></div>
-        <div class="maint"><div class="m-ico bg-green">✔</div><div class="m-num">92%</div><div class="m-lab">Completion Rate</div></div>
+        <div class="maint"><div class="m-ico bg-blue">📦</div><div class="m-num" id="ovSlots">0</div><div class="m-lab">Total Slots</div></div>
+        <div class="maint"><div class="m-ico bg-green">✔</div><div class="m-num" id="ovOcc">0</div><div class="m-lab">Occupied</div></div>
+        <div class="maint"><div class="m-ico bg-orange">▢</div><div class="m-num" id="ovEmpty">0</div><div class="m-lab">Empty</div></div>
+        <div class="maint"><div class="m-ico bg-purple">📊</div><div class="m-num" id="ovFill">0%</div><div class="m-lab">Fill Rate</div></div>
       </div>
     </div>
 
     <div class="card">
-      <h3>Revenue Summary</h3>
+      <h3>Estimated Sales</h3>
       <div class="rev-grid">
-        <div class="rev"><div class="r-lab">Today</div><div class="r-val">$3,650</div><div class="r-delta up">▲ 8.2%</div></div>
-        <div class="rev"><div class="r-lab">This Week</div><div class="r-val">$24,680</div><div class="r-delta up">▲ 12.5%</div></div>
-        <div class="rev"><div class="r-lab">This Month</div><div class="r-val">$98,450</div><div class="r-delta up">▲ 15.3%</div></div>
-        <div class="rev"><div class="r-lab">This Year</div><div class="r-val">$1.02M</div><div class="r-delta up">▲ 14.7%</div></div>
+        <div class="rev"><div class="r-lab">Est. Revenue</div><div class="r-val" id="esRev">$0</div><div class="r-delta up">live</div></div>
+        <div class="rev"><div class="r-lab">Units Sold (est.)</div><div class="r-val" id="esUnits">0</div><div class="r-delta up">live</div></div>
+        <div class="rev"><div class="r-lab">Avg Price / Unit</div><div class="r-val" id="esAvg">$0.00</div><div class="r-delta up">live</div></div>
+        <div class="rev"><div class="r-lab">Items (Lanes)</div><div class="r-val" id="esLanes">0</div><div class="r-delta up">live</div></div>
       </div>
     </div>
   </div>
@@ -395,39 +385,24 @@
 Chart.defaults.color = '#8b98ac';
 Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
 
-const days = ['Jun 1','Jun 2','Jun 3','Jun 4','Jun 5','Jun 6','Jun 7'];
-
-// Sales over time
-new Chart(document.getElementById('salesLine'), {
-  type:'line',
-  data:{labels:days,datasets:[
-    {label:'This Week',data:[2000,2900,3400,3200,3800,4100,5900],borderColor:'#2f7df0',
-      backgroundColor:(c)=>{const g=c.chart.ctx.createLinearGradient(0,0,0,210);g.addColorStop(0,'rgba(47,125,240,.35)');g.addColorStop(1,'rgba(47,125,240,0)');return g;},
-      fill:true,tension:.4,pointRadius:3,pointBackgroundColor:'#2f7df0',borderWidth:2.5},
-    {label:'Last Week',data:[1500,2100,2600,2400,2900,3100,3900],borderColor:'#8b98ac',
-      borderDash:[6,5],fill:false,tension:.4,pointRadius:3,pointBackgroundColor:'#8b98ac',borderWidth:2}
+// Est. revenue by lane (top 8) — seeded empty, filled live in refreshDashboardLive()
+let salesLine=new Chart(document.getElementById('salesLine'), {
+  type:'bar',
+  data:{labels:[],datasets:[
+    {label:'Est. Revenue',data:[],backgroundColor:'#2f7df0',borderRadius:4}
   ]},
   options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-    scales:{y:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+(v/1000)+'K',stepSize:2000},min:0,max:6000},
-            x:{grid:{display:false}}}}
+    scales:{y:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+v},beginAtZero:true},
+            x:{grid:{display:false},ticks:{font:{size:11}}}}}
 });
 
-// Category donut
-const catData = [
-  {name:'Beverages',pct:'42.3%',amt:'$10,442',color:'#2f7df0'},
-  {name:'Snacks',pct:'28.7%',amt:'$7,080',color:'#8b5cf6'},
-  {name:'Candy',pct:'14.9%',amt:'$3,678',color:'#f2a01d'},
-  {name:'Healthy',pct:'7.8%',amt:'$1,924',color:'#25c26e'},
-  {name:'Other',pct:'6.3%',amt:'$1,556',color:'#ec4899'}
-];
-new Chart(document.getElementById('categoryDonut'),{
+// Occupied vs Empty donut — seeded empty, filled live
+let categoryDonut=new Chart(document.getElementById('categoryDonut'),{
   type:'doughnut',
-  data:{labels:catData.map(d=>d.name),datasets:[{data:[10442,7080,3678,1924,1556],
-    backgroundColor:catData.map(d=>d.color),borderColor:'#111a2b',borderWidth:3}]},
+  data:{labels:['Occupied','Empty'],datasets:[{data:[0,0],
+    backgroundColor:['#25c26e','#f2a01d'],borderColor:'#111a2b',borderWidth:3}]},
   options:{cutout:'70%',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
 });
-document.getElementById('catLegend').innerHTML = catData.map(d=>
-  `<div class="li"><span class="dot" style="background:${d.color}"></span><span class="name">${d.name}</span><span class="pct">${d.pct}</span><span class="amt">${d.amt}</span></div>`).join('');
 
 // Status donut
 const statusData=[
@@ -444,13 +419,12 @@ let statusChart=new Chart(document.getElementById('statusDonut'),{
 document.getElementById('statusLegend').innerHTML = statusData.map(d=>
   `<div class="li"><span class="dot" style="background:${d.color}"></span><span class="name">${d.name}</span><span class="amt">${d.info}</span></div>`).join('');
 
-// Location bar (horizontal)
-new Chart(document.getElementById('locationBar'),{
+// Est. revenue by column (horizontal) — seeded empty, filled live
+let locationBar=new Chart(document.getElementById('locationBar'),{
   type:'bar',
-  data:{labels:['Main Office Building','Tech Park Center','University Campus','Hospital Lobby','Airport Terminal A','Shopping Mall','Other Locations'],
-    datasets:[{data:[4850,4120,3680,2950,2450,2150,4480],backgroundColor:'#2f7df0',borderRadius:4,barThickness:14}]},
+  data:{labels:[],datasets:[{data:[],backgroundColor:'#2f7df0',borderRadius:4,barThickness:18}]},
   options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-    scales:{x:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+(v/1000)+'K'},min:0,max:5000},
+    scales:{x:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+v},beginAtZero:true},
             y:{grid:{display:false},ticks:{font:{size:11}}}}}
 });
 
@@ -643,6 +617,82 @@ async function refreshDashboardLive(){
       if(leg) leg.innerHTML=statusData.map(d=>
         `<div class="li"><span class="dot" style="background:${d.color}"></span><span class="name">${d.name}</span><span class="amt">${d.info}</span></div>`).join('');
     }
+
+    // ---- Estimated sales (derived from live inventory) ----
+    const lanes=salesRows(item);
+    const revenue=lanes.reduce((s,r)=>s+r.rev,0);
+    const unitsSold=lanes.reduce((s,r)=>s+r.units,0);
+    const avg=unitsSold?revenue/unitsSold:0;
+    const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;};
+    set('kpiSales',fmtUSD(revenue));
+    set('kpiUnits',unitsSold.toLocaleString());
+    set('esRev',fmtUSD(revenue));
+    set('esUnits',unitsSold.toLocaleString());
+    set('esAvg',fmtUSD(avg));
+    set('esLanes',lanes.length);
+
+    // Inventory Overview
+    set('ovSlots',inv.total_slots);
+    set('ovOcc',inv.occupied_count);
+    set('ovEmpty',inv.empty_count);
+    set('ovFill',fill+'%');
+
+    // Occupied vs Empty donut + total-slots center + legend
+    set('invTotalSlots',inv.total_slots);
+    if(typeof categoryDonut!=='undefined'&&categoryDonut){
+      categoryDonut.data.datasets[0].data=[inv.occupied_count,inv.empty_count];
+      categoryDonut.update();
+      const catLeg=document.getElementById('catLegend');
+      if(catLeg){
+        const pct=n=>inv.total_slots?Math.round(n/inv.total_slots*100):0;
+        catLeg.innerHTML=[
+          {name:'Occupied',val:inv.occupied_count,color:'#25c26e'},
+          {name:'Empty',val:inv.empty_count,color:'#f2a01d'}
+        ].map(d=>`<div class="li"><span class="dot" style="background:${d.color}"></span><span class="name">${d.name}</span><span class="pct">${pct(d.val)}%</span><span class="amt">${d.val}</span></div>`).join('');
+      }
+    }
+
+    // Est. revenue by lane (top 8) bar
+    if(typeof salesLine!=='undefined'&&salesLine){
+      const top8=lanes.slice().sort((a,b)=>b.rev-a.rev).slice(0,8);
+      salesLine.data.labels=top8.map(r=>`${r.machine} ${r.row}`);
+      salesLine.data.datasets[0].data=top8.map(r=>Math.round(r.rev));
+      salesLine.update();
+    }
+
+    // Est. revenue by column bar
+    if(typeof locationBar!=='undefined'&&locationBar){
+      const byCol={};
+      lanes.forEach(r=>{byCol[r.machine]=(byCol[r.machine]||0)+r.rev;});
+      const cols=Object.keys(byCol).sort();
+      locationBar.data.labels=cols;
+      locationBar.data.datasets[0].data=cols.map(c=>Math.round(byCol[c]));
+      locationBar.update();
+    }
+
+    // Top selling lanes table
+    const tbody=document.getElementById('topLanesBody');
+    if(tbody){
+      const topSell=lanes.slice().sort((a,b)=>b.units-a.units||b.rev-a.rev).slice(0,5);
+      tbody.innerHTML=topSell.length?topSell.map((r,i)=>
+        `<tr><td><span class="rank">${i+1}</span> ${r.machine} ${r.row}</td><td class="loc">${LOCATION_NAME}</td><td class="num mono">${r.units}</td><td class="num mono">${fmtUSD(r.rev)}</td></tr>`
+      ).join(''):`<tr><td colspan="4" class="loc">No estimated sales yet.</td></tr>`;
+    }
+
+    // Recent Alerts (live)
+    const alerts=inventoryAlerts(item);
+    set('recentAlertsCount',alerts.length);
+    const alist=document.getElementById('recentAlertsList');
+    if(alist){
+      const when=new Date(item.timestamp*1000).toLocaleString();
+      alist.innerHTML=alerts.length?alerts.slice(0,4).map(a=>
+        `<div class="alert-item"><div class="a-ico ${a.cls}">${a.ico}</div><div class="a-txt">${a.msg}<div class="loc">${a.sev}${a.detail?' · '+a.detail:''}</div></div><div class="a-time">${when}</div></div>`
+      ).join(''):`<p class="empty-note" style="margin:0">No active stock alerts — all rows above threshold.</p>`;
+    }
+    const kAlerts=document.getElementById('kpiAlerts');
+    const kAlertsD=document.getElementById('kpiAlertsDelta');
+    if(kAlerts) kAlerts.textContent=alerts.length;
+    if(kAlertsD){kAlertsD.classList.remove('down','up');kAlertsD.textContent=`${LIVE_DEVICE} · live`;}
   }catch(err){/* keep static fallback on error */}
 }
 
