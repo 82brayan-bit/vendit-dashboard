@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VENDIT — Vending Machine Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0b1220;
+    --panel:#111a2b;
+    --panel-2:#0f1826;
+    --border:#1e2a3f;
+    --text:#e6edf6;
+    --muted:#8b98ac;
+    --blue:#2f7df0;
+    --green:#25c26e;
+    --purple:#8b5cf6;
+    --orange:#f2a01d;
+    --red:#ef4444;
+    --yellow:#f5c518;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    display:flex;
+    min-height:100vh;
+    font-size:14px;
+  }
+  a{color:inherit;text-decoration:none}
+
+  /* Sidebar */
+  .sidebar{
+    width:210px;
+    background:var(--panel-2);
+    border-right:1px solid var(--border);
+    padding:20px 14px;
+    display:flex;
+    flex-direction:column;
+    flex-shrink:0;
+  }
+  .logo{display:flex;align-items:center;gap:10px;margin-bottom:26px;padding:0 6px}
+  .logo .mark{width:38px;height:38px;border-radius:9px;background:linear-gradient(135deg,#2f7df0,#1b4fd0);display:flex;align-items:center;justify-content:center;font-size:20px}
+  .logo h1{font-size:20px;font-weight:800;letter-spacing:.5px}
+  .logo span{display:block;font-size:9px;letter-spacing:2px;color:var(--muted);font-weight:600}
+  .nav{display:flex;flex-direction:column;gap:3px}
+  .nav a{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:9px;color:var(--muted);font-weight:500;transition:.15s}
+  .nav a .ico{width:18px;text-align:center;opacity:.9}
+  .nav a:hover{background:#16233a;color:var(--text)}
+  .nav a.active{background:var(--blue);color:#fff;box-shadow:0 6px 18px rgba(47,125,240,.35)}
+
+  .machine-card{margin-top:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+  .machine-card img{width:100%;border-radius:8px;margin-bottom:10px;display:block}
+  .machine-card .status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px}
+  .machine-card .label{font-size:11px;color:var(--muted)}
+  .machine-card .healthy{color:var(--green);font-weight:700;font-size:16px;margin:2px 0}
+  .machine-card .sub{font-size:10px;color:var(--muted)}
+
+  /* Main */
+  .main{flex:1;padding:20px 26px;overflow:auto}
+  .topbar{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:22px;gap:16px}
+  .topbar h2{font-size:24px;font-weight:800;letter-spacing:.4px}
+  .topbar p{color:var(--muted);margin-top:4px;font-size:13px}
+  .top-actions{display:flex;align-items:center;gap:12px}
+  .pill{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:10px 14px;display:flex;align-items:center;gap:10px;color:var(--text);font-weight:600;font-size:13px}
+  .bell{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:9px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;font-size:16px}
+  .bell .badge{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .avatar{width:42px;height:42px;border-radius:50%;background:#2b3a55;display:flex;align-items:center;justify-content:center;font-size:18px}
+
+  /* Grid helpers */
+  .row{display:grid;gap:16px;margin-bottom:16px}
+  .kpis{grid-template-columns:repeat(5,1fr)}
+  .three{grid-template-columns:repeat(3,1fr)}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px}
+  .card h3{font-size:12px;letter-spacing:1px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:14px}
+
+  /* KPI card */
+  .kpi{display:flex;align-items:center;gap:14px}
+  .kpi .icon{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+  .kpi .k-label{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:700;text-transform:uppercase}
+  .kpi .k-val{font-size:26px;font-weight:800;margin:2px 0}
+  .kpi .k-delta{font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px}
+  .up{color:var(--green)}
+  .down{color:var(--red)}
+
+  .bg-blue{background:rgba(47,125,240,.18);color:#4f97ff}
+  .bg-green{background:rgba(37,194,110,.18);color:#37d67f}
+  .bg-purple{background:rgba(139,92,246,.18);color:#a684ff}
+  .bg-orange{background:rgba(242,160,29,.18);color:#f5b041}
+  .bg-red{background:rgba(239,68,68,.18);color:#ff6b6b}
+
+  .solid-blue{background:var(--blue);color:#fff}
+  .solid-green{background:var(--green);color:#fff}
+  .solid-purple{background:var(--purple);color:#fff}
+  .solid-orange{background:var(--orange);color:#fff}
+  .solid-red{background:var(--red);color:#fff}
+
+  /* Charts */
+  .chart-wrap{position:relative;height:210px}
+  .donut-wrap{display:flex;align-items:center;gap:14px}
+  .donut{position:relative;width:190px;height:190px;flex-shrink:0}
+  .donut .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  .donut .center .big{font-size:22px;font-weight:800}
+  .donut .center .small{font-size:11px;color:var(--muted)}
+  .legend{flex:1;display:flex;flex-direction:column;gap:11px}
+  .legend .li{display:flex;align-items:center;font-size:13px}
+  .legend .dot{width:10px;height:10px;border-radius:50%;margin-right:9px;flex-shrink:0}
+  .legend .name{flex:1;color:var(--text)}
+  .legend .pct{color:var(--muted);margin-right:12px;font-variant-numeric:tabular-nums}
+  .legend .amt{font-weight:700;font-variant-numeric:tabular-nums}
+
+  .chart-legend{display:flex;gap:18px;margin-bottom:8px;font-size:12px;color:var(--muted)}
+  .chart-legend .li{display:flex;align-items:center;gap:7px}
+  .chart-legend .line{width:20px;height:2px;background:var(--blue)}
+  .chart-legend .line.dash{background:transparent;border-top:2px dashed var(--muted)}
+
+  /* Tables / lists */
+  table{width:100%;border-collapse:collapse}
+  th{font-size:10px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;text-align:left;padding:6px 8px;font-weight:700}
+  td{padding:10px 8px;border-top:1px solid var(--border);font-size:13px}
+  .rank{width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+  td .loc{color:var(--muted);font-size:11px}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .mono{font-weight:700}
+
+  .stock-item{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--border)}
+  .stock-item:first-child{border-top:none}
+  .stock-item .thumb{width:38px;height:38px;border-radius:8px;background:var(--panel-2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  .stock-item .info{flex:1}
+  .stock-item .info .n{font-weight:600;font-size:13px}
+  .stock-item .info .m{color:var(--muted);font-size:11px}
+  .stock-item .left{text-align:right;font-weight:800;font-size:16px}
+  .stock-item .left small{display:block;font-size:9px;font-weight:600;letter-spacing:.5px}
+  .c-red{color:var(--red)} .c-orange{color:var(--orange)}
+
+  .view-all{float:right;color:var(--blue);font-size:12px;font-weight:600}
+
+  .alert-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
+  .alert-item:first-child{border-top:none}
+  .alert-item .a-ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .alert-item .a-txt{flex:1;font-size:13px;font-weight:500}
+  .alert-item .a-time{color:var(--muted);font-size:11px;text-align:right;white-space:nowrap}
+
+  .maint-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .maint{background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:16px 10px;text-align:center}
+  .maint .m-ico{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;margin:0 auto 10px}
+  .maint .m-num{font-size:24px;font-weight:800}
+  .maint .m-lab{font-size:11px;color:var(--muted);margin-top:2px}
+
+  .rev-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .rev .r-lab{font-size:10px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;font-weight:700}
+  .rev .r-val{font-size:22px;font-weight:800;margin:6px 0 4px}
+  .rev .r-delta{font-size:12px;font-weight:600}
+
+  .badge-count{background:var(--red);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;margin-left:8px}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="logo">
+    <div class="mark">🏬</div>
+    <div><h1>VENDIT</h1><span>SMART VENDING</span></div>
+  </div>
+  <nav class="nav">
+    <a class="active"><span class="ico">▦</span> Dashboard</a>
+    <a><span class="ico">🖥</span> Machines</a>
+    <a><span class="ico">💲</span> Sales</a>
+    <a><span class="ico">📦</span> Inventory</a>
+    <a><span class="ico">⚠</span> Alerts</a>
+    <a><span class="ico">🔧</span> Maintenance</a>
+    <a><span class="ico">📍</span> Locations</a>
+    <a><span class="ico">📊</span> Reports</a>
+    <a><span class="ico">👥</span> Customers</a>
+    <a><span class="ico">⚙</span> Settings</a>
+  </nav>
+  <div class="machine-card">
+    <img src="https://images.unsplash.com/photo-1621964275191-ccc01ef2134c?auto=format&fit=crop&w=400&q=60" alt="Vending machine">
+    <div class="label"><span class="status-dot"></span>System Status</div>
+    <div class="healthy">Healthy</div>
+    <div class="sub">All systems operational</div>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="topbar">
+    <div>
+      <h2>VENDING MACHINE DASHBOARD</h2>
+      <p>Real-time overview of your vending operations</p>
+    </div>
+    <div class="top-actions">
+      <div class="pill">📅 Jun 1 – Jun 7, 2025</div>
+      <div class="pill">≡ Filters</div>
+      <div class="bell">🔔<span class="badge">3</span></div>
+      <div class="avatar">👤</div>
+    </div>
+  </div>
+
+  <!-- KPI ROW -->
+  <div class="row kpis">
+    <div class="card kpi">
+      <div class="icon solid-blue">🏬</div>
+      <div><div class="k-label">Total Machines</div><div class="k-val">245</div><div class="k-delta up">▲ 8 vs last week</div></div>
+    </div>
+    <div class="card kpi">
+      <div class="icon solid-green">💲</div>
+      <div><div class="k-label">Total Sales</div><div class="k-val">$24,680</div><div class="k-delta up">▲ 12.5% vs last week</div></div>
+    </div>
+    <div class="card kpi">
+      <div class="icon solid-purple">🛒</div>
+      <div><div class="k-label">Sales Transactions</div><div class="k-val">1,842</div><div class="k-delta up">▲ 9.3% vs last week</div></div>
+    </div>
+    <div class="card kpi">
+      <div class="icon solid-orange">🛍</div>
+      <div><div class="k-label">Out of Stock</div><div class="k-val">23</div><div class="k-delta down">▼ 5 vs last week</div></div>
+    </div>
+    <div class="card kpi">
+      <div class="icon solid-red">🔔</div>
+      <div><div class="k-label">Alerts</div><div class="k-val">7</div><div class="k-delta down">▼ 2 vs last week</div></div>
+    </div>
+  </div>
+
+  <!-- CHARTS ROW -->
+  <div class="row three">
+    <div class="card">
+      <h3>Sales Over Time</h3>
+      <div class="chart-legend">
+        <div class="li"><span class="line"></span> This Week</div>
+        <div class="li"><span class="line dash"></span> Last Week</div>
+      </div>
+      <div class="chart-wrap"><canvas id="salesLine"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Sales By Product Category</h3>
+      <div class="donut-wrap">
+        <div class="donut">
+          <canvas id="categoryDonut"></canvas>
+          <div class="center"><div class="big">$24,680</div><div class="small">Total Sales</div></div>
+        </div>
+        <div class="legend" id="catLegend"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Machine Status</h3>
+      <div class="donut-wrap">
+        <div class="donut">
+          <canvas id="statusDonut"></canvas>
+          <div class="center"><div class="big">245</div><div class="small">Total</div></div>
+        </div>
+        <div class="legend" id="statusLegend"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MID ROW -->
+  <div class="row three">
+    <div class="card">
+      <h3>Top Performing Machines</h3>
+      <table>
+        <thead><tr><th>Machine</th><th>Location</th><th class="num">Sales</th><th class="num">vs Last Week</th></tr></thead>
+        <tbody>
+          <tr><td><span class="rank">1</span> VM-1023</td><td class="loc">Main Office Building</td><td class="num mono">$1,485</td><td class="num up">▲ 18.2%</td></tr>
+          <tr><td><span class="rank">2</span> VM-1007</td><td class="loc">Tech Park Center</td><td class="num mono">$1,320</td><td class="num up">▲ 15.7%</td></tr>
+          <tr><td><span class="rank">3</span> VM-1015</td><td class="loc">University Campus</td><td class="num mono">$1,125</td><td class="num up">▲ 10.3%</td></tr>
+          <tr><td><span class="rank">4</span> VM-1032</td><td class="loc">Hospital Lobby</td><td class="num mono">$1,050</td><td class="num up">▲ 9.8%</td></tr>
+          <tr><td><span class="rank">5</span> VM-1001</td><td class="loc">Airport Terminal A</td><td class="num mono">$980</td><td class="num up">▲ 8.1%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Low Stock Alerts</h3>
+      <div class="stock-item"><div class="thumb">🥤</div><div class="info"><div class="n">Coca-Cola 12oz</div><div class="m">Machine: VM-1023</div></div><div class="left c-red">5<small>LEFT</small></div></div>
+      <div class="stock-item"><div class="thumb">🍟</div><div class="info"><div class="n">Lay's Classic</div><div class="m">Machine: VM-1007</div></div><div class="left c-red">7<small>LEFT</small></div></div>
+      <div class="stock-item"><div class="thumb">⚡</div><div class="info"><div class="n">Monster Energy 16oz</div><div class="m">Machine: VM-1015</div></div><div class="left c-red">6<small>LEFT</small></div></div>
+      <div class="stock-item"><div class="thumb">🍫</div><div class="info"><div class="n">Snickers Bar</div><div class="m">Machine: VM-1032</div></div><div class="left c-orange">8<small>LEFT</small></div></div>
+      <div class="stock-item"><div class="thumb">💧</div><div class="info"><div class="n">Dasani Water 16oz</div><div class="m">Machine: VM-1001</div></div><div class="left c-orange">9<small>LEFT</small></div></div>
+    </div>
+
+    <div class="card">
+      <h3>Sales By Location</h3>
+      <div class="chart-wrap" style="height:260px"><canvas id="locationBar"></canvas></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM ROW -->
+  <div class="row three">
+    <div class="card">
+      <h3>Recent Alerts <span class="badge-count">7</span> <a class="view-all">View All</a></h3>
+      <div class="alert-item"><div class="a-ico bg-red">⛔</div><div class="a-txt">VM-1011 is out of service</div><div class="a-time">Jun 7, 2025<br>9:15 AM</div></div>
+      <div class="alert-item"><div class="a-ico bg-orange">🌡</div><div class="a-txt">High temperature alert – VM-1005</div><div class="a-time">Jun 7, 2025<br>8:42 AM</div></div>
+      <div class="alert-item"><div class="a-ico bg-red">💳</div><div class="a-txt">Payment system error – VM-1022</div><div class="a-time">Jun 7, 2025<br>7:30 AM</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Maintenance Overview</h3>
+      <div class="maint-grid">
+        <div class="maint"><div class="m-ico bg-blue">📅</div><div class="m-num">17</div><div class="m-lab">Scheduled</div></div>
+        <div class="maint"><div class="m-ico bg-orange">🔧</div><div class="m-num">3</div><div class="m-lab">In Progress</div></div>
+        <div class="maint"><div class="m-ico bg-red">📋</div><div class="m-num">5</div><div class="m-lab">Overdue</div></div>
+        <div class="maint"><div class="m-ico bg-green">✔</div><div class="m-num">92%</div><div class="m-lab">Completion Rate</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Revenue Summary</h3>
+      <div class="rev-grid">
+        <div class="rev"><div class="r-lab">Today</div><div class="r-val">$3,650</div><div class="r-delta up">▲ 8.2%</div></div>
+        <div class="rev"><div class="r-lab">This Week</div><div class="r-val">$24,680</div><div class="r-delta up">▲ 12.5%</div></div>
+        <div class="rev"><div class="r-lab">This Month</div><div class="r-val">$98,450</div><div class="r-delta up">▲ 15.3%</div></div>
+        <div class="rev"><div class="r-lab">This Year</div><div class="r-val">$1.02M</div><div class="r-delta up">▲ 14.7%</div></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+Chart.defaults.color = '#8b98ac';
+Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
+
+const days = ['Jun 1','Jun 2','Jun 3','Jun 4','Jun 5','Jun 6','Jun 7'];
+
+// Sales over time
+new Chart(document.getElementById('salesLine'), {
+  type:'line',
+  data:{labels:days,datasets:[
+    {label:'This Week',data:[2000,2900,3400,3200,3800,4100,5900],borderColor:'#2f7df0',
+      backgroundColor:(c)=>{const g=c.chart.ctx.createLinearGradient(0,0,0,210);g.addColorStop(0,'rgba(47,125,240,.35)');g.addColorStop(1,'rgba(47,125,240,0)');return g;},
+      fill:true,tension:.4,pointRadius:3,pointBackgroundColor:'#2f7df0',borderWidth:2.5},
+    {label:'Last Week',data:[1500,2100,2600,2400,2900,3100,3900],borderColor:'#8b98ac',
+      borderDash:[6,5],fill:false,tension:.4,pointRadius:3,pointBackgroundColor:'#8b98ac',borderWidth:2}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{y:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+(v/1000)+'K',stepSize:2000},min:0,max:6000},
+            x:{grid:{display:false}}}}
+});
+
+// Category donut
+const catData = [
+  {name:'Beverages',pct:'42.3%',amt:'$10,442',color:'#2f7df0'},
+  {name:'Snacks',pct:'28.7%',amt:'$7,080',color:'#8b5cf6'},
+  {name:'Candy',pct:'14.9%',amt:'$3,678',color:'#f2a01d'},
+  {name:'Healthy',pct:'7.8%',amt:'$1,924',color:'#25c26e'},
+  {name:'Other',pct:'6.3%',amt:'$1,556',color:'#ec4899'}
+];
+new Chart(document.getElementById('categoryDonut'),{
+  type:'doughnut',
+  data:{labels:catData.map(d=>d.name),datasets:[{data:[10442,7080,3678,1924,1556],
+    backgroundColor:catData.map(d=>d.color),borderColor:'#111a2b',borderWidth:3}]},
+  options:{cutout:'70%',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
+});
+document.getElementById('catLegend').innerHTML = catData.map(d=>
+  `<div class="li"><span class="dot" style="background:${d.color}"></span><span class="name">${d.name}</span><span class="pct">${d.pct}</span><span class="amt">${d.amt}</span></div>`).join('');
+
+// Status donut
+const statusData=[
+  {name:'Online',info:'218 (89.0%)',color:'#25c26e',val:218},
+  {name:'Offline',info:'17 (6.9%)',color:'#f2a01d',val:17},
+  {name:'Out of Service',info:'10 (4.1%)',color:'#ef4444',val:10}
+];
+new Chart(document.getElementById('statusDonut'),{
+  type:'doughnut',
+  data:{labels:statusData.map(d=>d.name),datasets:[{data:statusData.map(d=>d.val),
+    backgroundColor:statusData.map(d=>d.color),borderColor:'#111a2b',borderWidth:3}]},
+  options:{cutout:'70%',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
+});
+document.getElementById('statusLegend').innerHTML = statusData.map(d=>
+  `<div class="li"><span class="dot" style="background:${d.color}"></span><span class="name">${d.name}</span><span class="amt">${d.info}</span></div>`).join('');
+
+// Location bar (horizontal)
+new Chart(document.getElementById('locationBar'),{
+  type:'bar',
+  data:{labels:['Main Office Building','Tech Park Center','University Campus','Hospital Lobby','Airport Terminal A','Shopping Mall','Other Locations'],
+    datasets:[{data:[4850,4120,3680,2950,2450,2150,4480],backgroundColor:'#2f7df0',borderRadius:4,barThickness:14}]},
+  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{grid:{color:'#1e2a3f'},ticks:{callback:v=>'$'+(v/1000)+'K'},min:0,max:5000},
+            y:{grid:{display:false},ticks:{font:{size:11}}}}}
+});
+</script>
+</body>
+</html>
