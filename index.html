@@ -940,6 +940,7 @@ async function loadReports(){
     const item=await fetchDevice(LIVE_DEVICE);
     if(reportsDetail==='inventory') renderInventoryReport(item);
     else if(reportsDetail==='sales') renderSalesReport(item);
+    else if(reportsDetail==='best') renderBestSellers(item);
     else renderReports(item);
   }
   catch(err){ box.innerHTML=`<div class="card"><h3>Live Reports</h3><p class="empty-note">Couldn't load live reports. ${err.message}</p></div>`; }
@@ -1030,6 +1031,86 @@ function renderSalesReport(item){
   });
 }
 
+/* Rank lanes (items) by units sold and recommend what to restock */
+function buyList(item){
+  const rows=salesRows(item);
+  const ranked=rows.slice().sort((a,b)=>b.units-a.units||b.rev-a.rev);
+  const topKeys=new Set(ranked.slice(0,3).map(r=>r.key));
+  const buy=rows.filter(r=>r.empty>0).map(r=>({
+    machine:r.machine,row:r.row,key:r.key,units:r.units,price:r.price,
+    qty:r.empty, cost:r.empty*r.price,
+    priority: topKeys.has(r.key)?'High':(r.cap&&r.empty/r.cap>=0.5?'Medium':'Low')
+  })).sort((a,b)=>b.units-a.units||b.qty-a.qty);
+  return {ranked, buy};
+}
+
+function bestSellersText(item){
+  const {ranked,buy}=buyList(item);
+  const buyTotal=buy.reduce((s,r)=>s+r.qty,0);
+  const costTotal=buy.reduce((s,r)=>s+r.cost,0);
+  const L=['BEST SELLERS & BUY LIST',
+    'Location '+LOCATION_NAME,
+    'Device '+LIVE_DEVICE+' · '+new Date(item.timestamp*1000).toLocaleString(),'',
+    'Best sellers ranked by estimated units sold (empty slots). Not a transaction feed.','',
+    'BEST SELLERS (most sold first)'];
+  ranked.forEach((r,i)=>L.push(`${String(i+1).padStart(2)}. ${(r.machine+' '+r.row).padEnd(9)}  ${String(r.units).padStart(3)} sold   ${fmtUSD(r.rev)}`));
+  L.push('','WHAT TO BUY (restock to capacity, best sellers first)');
+  if(!buy.length) L.push('Nothing to buy — all lanes full.');
+  buy.forEach(r=>L.push(`${(r.machine+' '+r.row).padEnd(9)}  buy ${String(r.qty).padStart(2)} × ${fmtUSD(r.price)}   ${fmtUSD(r.cost)}   ${r.priority}`));
+  L.push('',`TOTAL TO BUY: ${buyTotal} units · ${fmtUSD(costTotal)} estimated spend`);
+  return L.join('\n');
+}
+
+function renderBestSellers(item){
+  reportsDetail='best';
+  const box=document.getElementById('reportsLive');
+  const {ranked,buy}=buyList(item);
+  const buyTotal=buy.reduce((s,r)=>s+r.qty,0);
+  const costTotal=buy.reduce((s,r)=>s+r.cost,0);
+  const top=ranked[0];
+  const upd=document.getElementById('reportsUpdated');
+  if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+  const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
+  const prCls=p=>p==='High'?'c-red':(p==='Medium'?'c-orange':'up');
+  const sellerRows=ranked.map((r,i)=>`<tr>
+      <td class="num mono">${i+1}</td>
+      <td class="mono">${r.machine} ${r.row}</td>
+      <td class="num mono">${r.units}</td>
+      <td class="num mono">${fmtUSD(r.rev)}</td>
+    </tr>`).join('');
+  const buyRows=(buy.length?buy:[]).map(r=>`<tr>
+      <td class="mono">${r.machine} ${r.row}</td>
+      <td class="num mono">${r.qty}</td>
+      <td class="num mono">${fmtUSD(r.price)}</td>
+      <td class="num mono">${fmtUSD(r.cost)}</td>
+      <td class="num ${prCls(r.priority)}">${r.priority}</td>
+    </tr>`).join('') || `<tr><td colspan="5" class="loc">Nothing to buy — all lanes full.</td></tr>`;
+  box.innerHTML=`
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div><div style="font-weight:800;font-size:16px">🏆 Best Sellers &amp; Buy List</div>
+        <div class="loc" style="margin-top:3px">📍 ${LOCATION_NAME} · ${LIVE_DEVICE} · ${new Date(item.timestamp*1000).toLocaleString()}</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="repTxt">Download .txt</button>
+        <button class="btn ghost" id="repBack">← Back</button>
+      </div>
+    </div>
+    <div class="card"><p class="empty-note" style="margin:0">Best sellers ranked by estimated units sold (empty slots; edit on the Sales view). The buy list refills each lane to capacity, prioritizing your top sellers. This is not a transaction feed.</p></div>
+    <div class="grid-4">
+      ${kpi('Top Seller',top?`${top.machine} ${top.row}`:'—','solid-green','🏆')}
+      ${kpi('Top Seller Units',top?top.units:0,'solid-purple','🛒')}
+      ${kpi('Total To Buy',buyTotal+' units','solid-orange','📦')}
+      ${kpi('Est. Spend',fmtUSD(costTotal),'solid-blue','💲')}
+    </div>
+    ${tableCard('Best Sellers — '+LOCATION_NAME+' (most sold first)','<th class="num">#</th><th>Item (Lane)</th><th class="num">Units Sold (est.)</th><th class="num">Revenue (est.)</th>',sellerRows)}
+    ${tableCard('What To Buy — restock to capacity, best sellers first','<th>Item (Lane)</th><th class="num">Buy Qty</th><th class="num">Unit Price</th><th class="num">Est. Cost</th><th class="num">Priority</th>',buyRows)}`;
+  document.getElementById('repBack').addEventListener('click',()=>renderReports(item));
+  document.getElementById('repTxt').addEventListener('click',()=>{
+    const blob=new Blob([bestSellersText(item)],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`${LIVE_DEVICE}-best-sellers-buy-list.txt`; a.click(); URL.revokeObjectURL(a.href);
+  });
+}
+
 function renderInventoryReport(item){
   reportsDetail='inventory';
   const box=document.getElementById('reportsLive');
@@ -1082,7 +1163,11 @@ function renderReports(item){
   const alerts=inventoryAlerts(item);
   const upd=document.getElementById('reportsUpdated');
   if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
+  const bs=buyList(item);
+  const topSeller=bs.ranked[0];
+  const buyTotal=bs.buy.reduce((s,r)=>s+r.qty,0);
   const reps=[
+    ['🏆','Best Sellers & Buy List',topSeller?`Top: ${topSeller.machine} ${topSeller.row} · buy ${buyTotal} units`:'No sales yet'],
     ['📦','Inventory & Restock Report',`${inv.empty_count} of ${inv.total_slots} slots empty · ${fill}% filled`],
     ['🖥','Machine Uptime Report',`${online} of ${stats.length} machines online`],
     ['🛒','Estimated Sales Summary',`${inv.empty_count} units vended (est.) · ${fmtUSD(estimatedRevenue(item))}`],
@@ -1090,7 +1175,7 @@ function renderReports(item){
     ['📍','Location Performance',`Main Office Building Buena Park · ${fill}% fill`],
     ['🗂','Raw Detections Export',`${item.detections.length} slot detections`]
   ];
-  const viewable=['Inventory & Restock Report','Estimated Sales Summary'];
+  const viewable=['Best Sellers & Buy List','Inventory & Restock Report','Estimated Sales Summary'];
   const cards=reps.map(r=>{
     const isView=viewable.includes(r[1]);
     return `<div class="card" style="display:flex;align-items:center;gap:14px">
@@ -1100,6 +1185,7 @@ function renderReports(item){
   }).join('');
   box.innerHTML=`<div class="grid-2">${cards}</div>`;
   box.querySelectorAll('[data-report]').forEach(btn=>btn.addEventListener('click',()=>{
+    if(btn.dataset.report==='Best Sellers & Buy List'){ renderBestSellers(item); return; }
     if(btn.dataset.report==='Inventory & Restock Report'){ renderInventoryReport(item); return; }
     if(btn.dataset.report==='Estimated Sales Summary'){ renderSalesReport(item); return; }
     const blob=new Blob([JSON.stringify(item,null,2)],{type:'application/json'});
