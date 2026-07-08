@@ -627,7 +627,7 @@ async function refreshDashboardLive(){
     if(list&&top.length){
       list.innerHTML=top.map(r=>{
         const cls=r.empty>=6?'c-red':'c-orange';
-        return `<div class="stock-item"><div class="thumb">🧃</div><div class="info"><div class="n">Column ${r.machine} · Row ${r.row}</div><div class="m">${r.empty} of ${r.total} slots empty</div></div><div class="left ${cls}">${r.empty}<small>EMPTY</small></div></div>`;
+        return `<div class="stock-item"><div class="thumb">🧃</div><div class="info"><div class="n">${machineLabel(r.machine)} · Row ${r.row}</div><div class="m">${r.empty} of ${r.total} slots empty</div></div><div class="left ${cls}">${r.empty}<small>EMPTY</small></div></div>`;
       }).join('');
     }
     // Total Machines KPI + Machine Status donut (live, per-machine)
@@ -716,7 +716,7 @@ async function refreshDashboardLive(){
       const byCol={};
       lanes.forEach(r=>{byCol[r.machine]=(byCol[r.machine]||0)+r.rev;});
       const cols=Object.keys(byCol).sort();
-      locationBar.data.labels=cols;
+      locationBar.data.labels=cols.map(machineLabel);
       locationBar.data.datasets[0].data=cols.map(c=>Math.round(byCol[c]));
       locationBar.update();
     }
@@ -726,7 +726,7 @@ async function refreshDashboardLive(){
     if(tbody){
       const topSell=lanes.slice().sort((a,b)=>b.units-a.units||b.rev-a.rev).slice(0,5);
       tbody.innerHTML=topSell.length?topSell.map((r,i)=>
-        `<tr><td><span class="rank">${i+1}</span> ${r.machine} ${r.row}</td><td class="loc">${LOCATION_NAME}</td><td class="num mono">${r.units}</td><td class="num mono">${fmtUSD(r.rev)}</td></tr>`
+        `<tr><td><span class="rank">${i+1}</span> ${laneLabel(r.machine,r.row)}</td><td class="loc">${LOCATION_NAME}</td><td class="num mono">${r.units}</td><td class="num mono">${fmtUSD(r.rev)}</td></tr>`
       ).join(''):`<tr><td colspan="4" class="loc">No estimated sales yet.</td></tr>`;
     }
 
@@ -767,7 +767,7 @@ function renderInventory(item){
         .map(s=>`<div class="slot ${s.occupied?'occ':'emp'}" title="${s.slot}">${s.position}</div>`).join('');
       return `<div class="slot-row"><span class="rlab">${rk}</span>${cells}</div>`;
     }).join('');
-    return `<div class="card"><h3>Column ${mk} · ${occ}/${all.length} filled</h3>${rowsHtml}</div>`;
+    return `<div class="card"><h3>${machineLabel(mk)} · ${occ}/${all.length} filled</h3>${rowsHtml}</div>`;
   }).join('');
 
   const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
@@ -784,6 +784,11 @@ function renderInventory(item){
     <div class="grid-2">${machineCards}</div>
     ${imgCard}`;
 }
+
+/* Friendly names for the physical machines (columns) reported by the CV API */
+const MACHINE_NAMES={VM1:'Snack Machine',VM2:'Beverage Machine'};
+function machineLabel(m){return MACHINE_NAMES[m]||m;}
+function laneLabel(m,row){return `${machineLabel(m)} · ${row}`;}
 
 /* Derive per-machine (VM1/VM2) live stats from a device's detections */
 function machineStats(item){
@@ -826,7 +831,7 @@ function renderMachines(item){
   const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
 
   const rows=stats.map(m=>`<tr>
-      <td class="mono">${m.name}</td>
+      <td class="mono">${machineLabel(m.name)}</td>
       <td><span class="st st-${m.status}">${stLabel[m.status]}</span></td>
       <td><div class="fillbar"><span style="width:${m.fill}%"></span></div></td>
       <td class="num mono">${m.occupied}/${m.total}</td>
@@ -891,8 +896,8 @@ function inventoryAlerts(item){
   const alerts=[];
   if(!online) alerts.push({sev:'Critical',ico:'📶',cls:'bg-red',msg:`${LIVE_DEVICE} is offline (data is stale)`});
   Object.values(rows).forEach(r=>{
-    if(r.empty===r.total) alerts.push({sev:'Critical',ico:'⛔',cls:'bg-red',msg:`${r.machine} · Row ${r.row} is out of stock`,detail:`${r.empty}/${r.total} slots empty`});
-    else if(r.empty/r.total>=0.5) alerts.push({sev:'Warning',ico:'🛒',cls:'bg-orange',msg:`${r.machine} · Row ${r.row} is low on stock`,detail:`${r.empty}/${r.total} slots empty`});
+    if(r.empty===r.total) alerts.push({sev:'Critical',ico:'⛔',cls:'bg-red',msg:`${machineLabel(r.machine)} · Row ${r.row} is out of stock`,detail:`${r.empty}/${r.total} slots empty`});
+    else if(r.empty/r.total>=0.5) alerts.push({sev:'Warning',ico:'🛒',cls:'bg-orange',msg:`${machineLabel(r.machine)} · Row ${r.row} is low on stock`,detail:`${r.empty}/${r.total} slots empty`});
   });
   const order={Critical:0,Warning:1,Info:2};
   alerts.sort((a,b)=>(order[a.sev]-order[b.sev]));
@@ -980,7 +985,7 @@ function renderSales(item){
   const fill=inv.total_slots?Math.round(inv.occupied_count/inv.total_slots*100):0;
   const kpi=(l,v,cls,ic,id)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val"${id?` id="${id}"`:''}>${v}</div></div></div>`;
   const rowsHtml=rows.map(r=>`<tr>
-      <td class="mono">${r.machine}</td>
+      <td class="mono">${machineLabel(r.machine)}</td>
       <td class="mono">${r.row}</td>
       <td class="num"><span class="price-in"><input type="number" min="0" step="1" value="${r.cap}" data-cap-key="${r.key}"></span></td>
       <td class="num"><span class="price-in"><input type="number" min="0" step="1" value="${r.units}" data-units-key="${r.key}"></span></td>
@@ -1072,7 +1077,7 @@ function inventoryReportText(item){
     `${need.length} of ${lanes.length} lanes need restock`,'',
     'RESTOCK LIST (most urgent first)'];
   if(!need.length) L.push('All lanes fully stocked.');
-  need.forEach(l=>L.push(`${(l.machine+' '+l.row).padEnd(9)}  ${l.occ}/${l.total} filled   refill ${String(l.empty).padStart(2)}   ${l.status}`));
+  need.forEach(l=>L.push(`${laneLabel(l.machine,l.row).padEnd(22)}  ${l.occ}/${l.total} filled   refill ${String(l.empty).padStart(2)}   ${l.status}`));
   return L.join('\n');
 }
 
@@ -1087,7 +1092,7 @@ function salesReportText(item){
     `${units} units vended (est.) · ${fmtUSD(revenue)} estimated revenue`,
     `${rows.length} lanes`,'',
     'SALES BY LANE (highest revenue first)'];
-  rows.forEach(r=>L.push(`${(r.machine+' '+r.row).padEnd(9)}  ${String(r.units).padStart(3)} units × ${fmtUSD(r.price)}   ${fmtUSD(r.rev)}`));
+  rows.forEach(r=>L.push(`${laneLabel(r.machine,r.row).padEnd(22)}  ${String(r.units).padStart(3)} units × ${fmtUSD(r.price)}   ${fmtUSD(r.rev)}`));
   return L.join('\n');
 }
 
@@ -1102,7 +1107,7 @@ function renderSalesReport(item){
   if(upd) upd.textContent=LIVE_DEVICE+' · Updated '+new Date(item.timestamp*1000).toLocaleString();
   const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
   const tblRows=rows.map(r=>`<tr>
-      <td class="mono">${r.machine} ${r.row}</td>
+      <td class="mono">${laneLabel(r.machine,r.row)}</td>
       <td class="num mono">${r.units}</td>
       <td class="num mono">${fmtUSD(r.price)}</td>
       <td class="num mono">${fmtUSD(r.rev)}</td>
@@ -1154,10 +1159,10 @@ function bestSellersText(item){
     'Device '+LIVE_DEVICE+' · '+new Date(item.timestamp*1000).toLocaleString(),'',
     'Best sellers ranked by estimated units sold (empty slots). Not a transaction feed.','',
     'BEST SELLERS (most sold first)'];
-  ranked.forEach((r,i)=>L.push(`${String(i+1).padStart(2)}. ${(r.machine+' '+r.row).padEnd(9)}  ${String(r.units).padStart(3)} sold   ${fmtUSD(r.rev)}`));
+  ranked.forEach((r,i)=>L.push(`${String(i+1).padStart(2)}. ${laneLabel(r.machine,r.row).padEnd(22)}  ${String(r.units).padStart(3)} sold   ${fmtUSD(r.rev)}`));
   L.push('','WHAT TO BUY (restock to capacity, best sellers first)');
   if(!buy.length) L.push('Nothing to buy — all lanes full.');
-  buy.forEach(r=>L.push(`${(r.machine+' '+r.row).padEnd(9)}  buy ${String(r.qty).padStart(2)} × ${fmtUSD(r.price)}   ${fmtUSD(r.cost)}   ${r.priority}`));
+  buy.forEach(r=>L.push(`${laneLabel(r.machine,r.row).padEnd(22)}  buy ${String(r.qty).padStart(2)} × ${fmtUSD(r.price)}   ${fmtUSD(r.cost)}   ${r.priority}`));
   L.push('',`TOTAL TO BUY: ${buyTotal} units · ${fmtUSD(costTotal)} estimated spend`);
   return L.join('\n');
 }
@@ -1175,12 +1180,12 @@ function renderBestSellers(item){
   const prCls=p=>p==='High'?'c-red':(p==='Medium'?'c-orange':'up');
   const sellerRows=ranked.map((r,i)=>`<tr>
       <td class="num mono">${i+1}</td>
-      <td class="mono">${r.machine} ${r.row}</td>
+      <td class="mono">${laneLabel(r.machine,r.row)}</td>
       <td class="num mono">${r.units}</td>
       <td class="num mono">${fmtUSD(r.rev)}</td>
     </tr>`).join('');
   const buyRows=(buy.length?buy:[]).map(r=>`<tr>
-      <td class="mono">${r.machine} ${r.row}</td>
+      <td class="mono">${laneLabel(r.machine,r.row)}</td>
       <td class="num mono">${r.qty}</td>
       <td class="num mono">${fmtUSD(r.price)}</td>
       <td class="num mono">${fmtUSD(r.cost)}</td>
@@ -1197,7 +1202,7 @@ function renderBestSellers(item){
     </div>
     <div class="card"><p class="empty-note" style="margin:0">Best sellers ranked by estimated units sold (empty slots; edit on the Sales view). The buy list refills each lane to capacity, prioritizing your top sellers. This is not a transaction feed.</p></div>
     <div class="grid-4">
-      ${kpi('Top Seller',top?`${top.machine} ${top.row}`:'—','solid-green','🏆')}
+      ${kpi('Top Seller',top?laneLabel(top.machine,top.row):'—','solid-green','🏆')}
       ${kpi('Top Seller Units',top?top.units:0,'solid-purple','🛒')}
       ${kpi('Total To Buy',buyTotal+' units','solid-orange','📦')}
       ${kpi('Est. Spend',fmtUSD(costTotal),'solid-blue','💲')}
@@ -1225,7 +1230,7 @@ function renderInventoryReport(item){
   const kpi=(l,v,cls,ic)=>`<div class="card kpi"><div class="icon ${cls}">${ic}</div><div><div class="k-label">${l}</div><div class="k-val">${v}</div></div></div>`;
   const list=(need.length?need:lanes);
   const rows=list.map(l=>`<tr>
-      <td class="mono">${l.machine} ${l.row}</td>
+      <td class="mono">${laneLabel(l.machine,l.row)}</td>
       <td class="num mono">${l.occ}/${l.total}</td>
       <td class="num mono">${l.empty}</td>
       <td class="num ${badge(l.status)}">${l.status}</td>
@@ -1268,7 +1273,7 @@ function renderReports(item){
   const topSeller=bs.ranked[0];
   const buyTotal=bs.buy.reduce((s,r)=>s+r.qty,0);
   const reps=[
-    ['🏆','Best Sellers & Buy List',topSeller?`Top: ${topSeller.machine} ${topSeller.row} · buy ${buyTotal} units`:'No sales yet'],
+    ['🏆','Best Sellers & Buy List',topSeller?`Top: ${laneLabel(topSeller.machine,topSeller.row)} · buy ${buyTotal} units`:'No sales yet'],
     ['📦','Inventory & Restock Report',`${inv.empty_count} of ${inv.total_slots} slots empty · ${fill}% filled`],
     ['🖥','Machine Uptime Report',`${online} of ${stats.length} machines online`],
     ['🛒','Estimated Sales Summary',`${inv.empty_count} units vended (est.) · ${fmtUSD(estimatedRevenue(item))}`],
